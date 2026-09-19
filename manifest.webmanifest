@@ -1,0 +1,22 @@
+{
+  "name": "umlLight — Application Spec Designer",
+  "short_name": "umlLight",
+  "description": "Anwendungen spezifizieren: Vision, Use Cases, Deployment, Datenmodell und View-Modell — mit PlantUML-Diagrammen.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#11151d",
+  "theme_color": "#1b2130",
+  "lang": "de",
+  "categories": ["productivity", "developer", "utilities"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Projekte", "url": "./index.html#/projects" }
+  ]
+}

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>umlLight — Application Spec Designer</title>
+<meta name="description" content="Kleine PWA zum Spezifizieren von Anwendungen mit PlantUML: Vision, Use Cases, Deployment, Datenmodell, View-Modell.">
+<meta name="theme-color" content="#1b2130">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="app" class="app">
+  <header class="topbar">
+    <button class="icon-btn only-mobile" id="navToggle" aria-label="Navigation umschalten">☰</button>
+    <a class="brand" href="#/projects">
+      <img src="icons/icon.svg" alt="" width="24" height="24">
+      <span>umlLight</span>
+    </a>
+    <div class="topbar-title" id="topbarTitle"></div>
+    <div class="topbar-actions">
+      <span class="badge" id="saveState" hidden>gespeichert</span>
+      <button class="icon-btn" id="settingsBtn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="sidebar" id="sidebar" aria-label="Projektnavigation"></nav>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+</div>
+
+<div class="modal-root" id="modalRoot" hidden></div>
+<div class="toast-root" id="toastRoot" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

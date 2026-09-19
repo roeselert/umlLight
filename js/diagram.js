@@ -1,9 +1,16 @@
 // Reusable diagram panel: renders PlantUML via the configured server, shows the
 // source, and lets the user override the generated source by hand.
 
-import { h, clear, toast, copyText, download, debounce } from './ui.js';
+import { h, clear, toast, copyText, download, debounce, modal } from './ui.js';
 import { diagramUrl, editUrl, fetchDiagram, serverBase } from './plantuml.js';
 import { getSettings } from './store.js';
+import { openAiDialog } from './aipanel.js';
+
+// One global listener closes any open overflow menu — panels are re-created on
+// every render, so per-panel listeners would pile up on document.
+document.addEventListener('click', () => {
+  document.querySelectorAll('.more-menu.open').forEach((m) => m.classList.remove('open'));
+});
 
 /**
  * @param {object} cfg
@@ -19,6 +26,29 @@ export function diagramPanel(cfg) {
   let token = 0;
 
   const view = h('div', { class: 'diagram-view' });
+  let zoom = 1;
+
+  function applyZoom() {
+    const img = view.querySelector('img');
+    if (!img) return;
+    if (zoom === 1) {
+      img.style.width = '';
+      img.style.maxWidth = '100%';
+    } else {
+      img.style.maxWidth = 'none';
+      img.style.width = `${Math.round(zoom * 100)}%`;
+    }
+  }
+
+  function openFullscreen() {
+    const img = view.querySelector('img');
+    if (!img) { toast('Erst rendern, dann vergrößern', 'err'); return; }
+    modal((close) => h('div', { class: 'fullscreen-diagram' },
+      h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('strong', { style: { flex: '1 1 auto' } }, cfg.title),
+        h('button', { class: 'btn small', onclick: () => close() }, 'Schließen')),
+      h('div', { class: 'fullscreen-canvas' }, h('img', { src: img.src, alt: cfg.title }))));
+  }
   const srcBox = h('div', { class: 'diagram-src', hidden: true });
   const status = h('span', { class: 'meta', style: { fontSize: '12px', color: 'var(--fg-dim)' } });
 
@@ -55,6 +85,7 @@ export function diagramPanel(cfg) {
       if (my !== token) return;
       clear(view);
       view.appendChild(img);
+      applyZoom();
     };
     img.onerror = () => {
       clearTimeout(timer);
@@ -109,10 +140,44 @@ export function diagramPanel(cfg) {
     }
   }
 
+  const aiButton = cfg.setCustom
+    ? h('button', {
+      class: 'btn small ai-btn',
+      title: 'Diagramm mit KI erzeugen oder ändern',
+      onclick: () => openAiDialog({
+        title: cfg.title,
+        section: cfg.section,
+        project: cfg.project,
+        currentSource: current(),
+        onApply: (uml) => { cfg.setCustom(uml); buildSourceBox(); render(); },
+        onOpenSettings: () => document.dispatchEvent(new CustomEvent('umllight:settings', { detail: { focus: 'ai' } })),
+      }),
+    }, '✨ KI')
+    : null;
+
+  const moreMenu = h('div', { class: 'more-menu' },
+    h('button', { class: 'btn small', onclick: () => { closeMore(); copyText(current()); } }, 'Kopieren'),
+    h('button', { class: 'btn small', onclick: () => { closeMore(); downloadDiagram('svg'); } }, 'SVG'),
+    h('button', { class: 'btn small', onclick: () => { closeMore(); downloadDiagram('png'); } }, 'PNG'),
+    h('button', { class: 'btn small', onclick: () => { closeMore(); openInServer(); } }, 'Im Server öffnen ↗'));
+  const closeMore = () => moreMenu.classList.remove('open');
+
   const bar = h('div', { class: 'diagram-bar' },
     h('span', { class: 'title' }, cfg.title),
     status,
-    h('button', { class: 'btn small', onclick: render, title: 'Neu rendern' }, '↻'),
+    aiButton,
+    h('button', { class: 'btn small', onclick: render, title: 'Neu rendern', 'aria-label': 'Neu rendern' }, '↻'),
+    h('button', {
+      class: 'btn small', title: 'Verkleinern', 'aria-label': 'Verkleinern',
+      onclick: () => { zoom = Math.max(0.5, Math.round((zoom - 0.25) * 100) / 100); applyZoom(); },
+    }, '−'),
+    h('button', {
+      class: 'btn small', title: 'Vergrößern', 'aria-label': 'Vergrößern',
+      onclick: () => { zoom = Math.min(4, Math.round((zoom + 0.25) * 100) / 100); applyZoom(); },
+    }, '+'),
+    h('button', {
+      class: 'btn small', title: 'Vollbild', 'aria-label': 'Vollbild', onclick: openFullscreen,
+    }, '⤢'),
     h('button', {
       class: 'btn small',
       onclick: (e) => {
@@ -122,10 +187,11 @@ export function diagramPanel(cfg) {
         e.target.textContent = showSource ? 'Quelle ausblenden' : 'Quelle';
       },
     }, 'Quelle'),
-    h('button', { class: 'btn small', onclick: () => copyText(current()) }, 'Kopieren'),
-    h('button', { class: 'btn small', onclick: () => downloadDiagram('svg') }, 'SVG'),
-    h('button', { class: 'btn small', onclick: () => downloadDiagram('png') }, 'PNG'),
-    h('button', { class: 'btn small', onclick: openInServer, title: 'Im PlantUML-Server öffnen' }, '↗'));
+    h('button', {
+      class: 'btn small more-toggle', title: 'Weitere Aktionen', 'aria-label': 'Weitere Aktionen',
+      onclick: (e) => { e.stopPropagation(); moreMenu.classList.toggle('open'); },
+    }, '⋯'),
+    moreMenu);
 
   const root = h('div', { class: 'diagram' }, bar, view, srcBox);
   root.refresh = () => { if (showSource) buildSourceBox(); render(); };

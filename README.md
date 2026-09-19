@@ -14,10 +14,47 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | **Deployment** | Wahlweise Knotenmodell (verschachtelbar, Artefakte, Verbindungen) **oder** reine Textbeschreibung → Deployment-Diagramm |
 | **Datenmodell** | Entitäten mit Attributen (Typ, PK/FK, Pflicht) und typisierten Beziehungen (1:n, n:m, Vererbung, Komposition …) → ER-Diagramm |
 | **View-Modell** | Views mit Elementen, Navigationsübergänge → Zustands-/Navigationsdiagramm, plus beliebig viele Aktivitätsdiagramme |
-| **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Export als Markdown-Spezifikation |
+| **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Markdown-Export |
+| **KI-Assistent** | Diagramme per Anweisung erzeugen oder ändern — über die Hugging-Face-Inference-API, Modell/Token/System-Prompt frei konfigurierbar |
+| **Markdown-Export** | Spezifikation als Markdown, wahlweise mit Inhaltsverzeichnis, PlantUML-Quelltext und/oder Diagramm-Bildlinks; einzeln oder alle Projekte in einem Dokument |
 
 Jedes generierte Diagramm kann per **„Quelle → Überschreiben"** durch handgeschriebenes PlantUML ersetzt
 und jederzeit wieder auf die generierte Fassung zurückgesetzt werden.
+
+## KI-Assistent
+
+Jedes Diagramm hat eine **✨ KI**-Schaltfläche. Dort eine Anweisung eingeben
+(oder einen der vorgeschlagenen Prompts antippen) — der Vorschlag wird
+live gestreamt, der PlantUML-Block daraus extrahiert und auf Wunsch als Quelle
+des Diagramms übernommen. Mitgesendet werden die Anweisung sowie optional die
+aktuelle Diagrammquelle und ein kompakter Projektkontext (Vision, Akteure,
+Entitäten, Views) — beides pro Anfrage abwählbar.
+
+Einrichtung unter **Einstellungen → KI-Assistent**:
+
+| Einstellung | Bedeutung |
+| --- | --- |
+| **Zugriffstoken** | Hugging-Face-Token (huggingface.co → Settings → Access Tokens, Rolle „read") |
+| **Modell** | z. B. `Qwen/Qwen2.5-Coder-32B-Instruct`, optional mit Provider-Suffix (`…:together`) |
+| **Endpunkt** | OpenAI-kompatibler Chat-Completions-Endpunkt, Standard `https://router.huggingface.co/v1/chat/completions`; funktioniert auch mit eigenen Inference-Endpoints oder lokalen Servern |
+| **System-Prompt** | erzwingt reine PlantUML-Ausgabe; frei editierbar und auf den Standard zurücksetzbar |
+| **Temperatur / Max. Tokens** | Steuerung von Kreativität und Antwortlänge |
+
+„Verbindung testen" schickt eine Minimalanfrage und meldet, ob Token, Modell und
+Prompt zusammenpassen. Der Token wird **unverschlüsselt im localStorage**
+gespeichert und ausschließlich als `Authorization`-Header an den konfigurierten
+Endpunkt geschickt — auf geteilten Geräten besser leer lassen.
+
+## Mobile Nutzung
+
+Die Oberfläche ist für Telefone ausgelegt:
+
+* feste **Bottom-Navigation** über die sechs Projektbereiche, Schubladen-Menü für den Projektwechsel
+* Dialoge erscheinen als **Bottom-Sheets** mit klebender Aktionsleiste
+* Tabellen (Attribute, Beziehungen, Verbindungen, Navigation) werden zu **gestapelten Karten** mit Feldbeschriftungen
+* Sortieren per **↑/↓-Schaltflächen** statt Drag & Drop (auf dem Desktop zusätzlich ziehbar)
+* Diagramme mit **Zoom-Schaltflächen und Vollbild** (dort Pinch-Zoom), sekundäre Aktionen im **⋯-Menü**
+* Eingabefelder mit 16 px Schriftgröße (kein iOS-Zoom beim Fokus), Tap-Ziele ≥ 36 px, Beachtung der Safe-Area-Ränder
 
 ## Betrieb auf GitHub Pages
 
@@ -40,6 +77,7 @@ Ein Webserver ist nötig (ES-Module und Service Worker laufen nicht über `file:
 ## Daten & Datenschutz
 
 * Alle Projekte liegen im `localStorage` des Browsers — es gibt keinen Server und keine Anmeldung.
+* Der KI-Assistent sendet nur bei aktiver Nutzung Daten (Anweisung, Diagrammquelle, optionaler Projektkontext) an den eingestellten Endpunkt.
 * Beim Rendern wird **nur der PlantUML-Quelltext des jeweiligen Diagramms** (komprimiert und kodiert in der URL)
   an den eingestellten PlantUML-Server geschickt. Voreinstellung: `https://www.plantuml.com/plantuml`.
 * Für vertrauliche Inhalte in den Einstellungen einen eigenen Server eintragen, z. B.:
@@ -60,8 +98,11 @@ css/styles.css        Styling inkl. Dark/Light-Mode
 js/app.js             Hash-Router, Sidebar, Einstellungen
 js/store.js           localStorage-Persistenz, Import/Export
 js/plantuml.js        PlantUML-Kodierung (deflate + Base64, Hex-Fallback)
-js/diagram.js         Diagramm-Panel (rendern, Quelle, Download, Überschreiben)
-js/generators.js      Modell → PlantUML + Markdown-Spezifikation
+js/diagram.js         Diagramm-Panel (rendern, zoomen, Quelle, Download, Überschreiben)
+js/generators.js      Modell → PlantUML
+js/export.js          Markdown-Export inkl. Optionsdialog
+js/ai.js              Hugging-Face-Client (Streaming, PlantUML-Extraktion)
+js/aipanel.js         KI-Dialog je Diagramm
 js/views/*.js         Die sechs Bereiche der Anwendung
 sw.js                 Service Worker (App-Shell offline, Diagramm-Cache)
 ```

@@ -141,6 +141,39 @@ export function listItem({ title, meta, open = false, onToggle, actions = [], bo
   return item;
 }
 
+/**
+ * Up/down buttons for reordering a list. Works on touch devices, where HTML5
+ * drag & drop does not.
+ */
+export function moveActions(list, id, after) {
+  const idx = list.findIndex((x) => x.id === id);
+  const mk = (dir, label, title) => h('button', {
+    class: 'btn small ghost move-btn',
+    title,
+    'aria-label': title,
+    disabled: dir < 0 ? idx <= 0 : idx >= list.length - 1,
+    onclick: (e) => {
+      e.stopPropagation();
+      const j = idx + dir;
+      if (j < 0 || j >= list.length) return;
+      [list[idx], list[j]] = [list[j], list[idx]];
+      after();
+    },
+  }, label);
+  return [mk(-1, '↑', 'Nach oben'), mk(1, '↓', 'Nach unten')];
+}
+
+/**
+ * Table with cells labelled by their column header, so narrow screens can
+ * render each row as a stacked card (see the CSS for table.grid).
+ */
+export function gridTable(headers, rows) {
+  return h('table', { class: 'grid' },
+    h('thead', {}, h('tr', {}, headers.map((t) => h('th', {}, t)))),
+    h('tbody', {}, rows.map((cells) => h('tr', {},
+      cells.map((c, i) => h('td', { 'data-label': headers[i] || '' }, c))))));
+}
+
 /** Simple drag & drop reordering for a container of .item elements. */
 export function makeSortable(container, onReorder) {
   let dragged = null;

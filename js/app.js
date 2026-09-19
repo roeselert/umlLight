@@ -1,6 +1,6 @@
 // App shell: hash router, sidebar, settings, service-worker registration.
 
-import { h, clear, field, textInput, select, modal, toast } from './ui.js';
+import { h, clear, field, textInput, select, modal, toast, download } from './ui.js';
 import * as store from './store.js';
 import { renderProjects } from './views/projects.js';
 import { renderOverview } from './views/overview.js';
@@ -11,12 +11,12 @@ import { renderDataModel } from './views/datamodel.js';
 import { renderViewModel } from './views/viewmodel.js';
 
 const SECTIONS = [
-  ['overview', 'Übersicht', '◎'],
-  ['vision', 'Produktvision', '★'],
-  ['usecases', 'Use Cases', '⬡'],
-  ['deployment', 'Deployment', '▤'],
-  ['datamodel', 'Datenmodell', '▦'],
-  ['viewmodel', 'Views & Abläufe', '▣'],
+  ['overview', 'Übersicht', '◎', 'Übersicht'],
+  ['vision', 'Produktvision', '★', 'Vision'],
+  ['usecases', 'Use Cases', '⬡', 'Use Cases'],
+  ['deployment', 'Deployment', '▤', 'Deploy'],
+  ['datamodel', 'Datenmodell', '▦', 'Daten'],
+  ['viewmodel', 'Views & Abläufe', '▣', 'Views'],
 ];
 
 const RENDERERS = {
@@ -30,6 +30,8 @@ const RENDERERS = {
 
 const main = document.getElementById('main');
 const sidebar = document.getElementById('sidebar');
+const tabbar = document.getElementById('tabbar');
+const scrim = document.getElementById('scrim');
 const topbarTitle = document.getElementById('topbarTitle');
 const saveState = document.getElementById('saveState');
 
@@ -81,18 +83,45 @@ function renderSidebar(state) {
   sidebar.appendChild(list);
 }
 
+/** Bottom navigation, shown on small screens while a project is open. */
+function renderTabbar(state) {
+  clear(tabbar);
+  if (state.route !== 'project' || !store.getProject(state.projectId)) {
+    tabbar.hidden = true;
+    document.body.classList.remove('has-tabbar');
+    return;
+  }
+  tabbar.hidden = false;
+  document.body.classList.add('has-tabbar');
+  for (const [key, label, ico, short] of SECTIONS) {
+    tabbar.appendChild(h('a', {
+      class: `tab-link ${state.section === key ? 'active' : ''}`,
+      href: `#/p/${state.projectId}/${key}`,
+      'aria-label': label,
+      'aria-current': state.section === key ? 'page' : null,
+    }, h('span', { class: 'ico' }, ico), h('span', { class: 'lbl' }, short)));
+  }
+}
+
+function closeDrawer() {
+  sidebar.classList.remove('open');
+  scrim.hidden = true;
+}
+
 function render() {
   const state = parseHash();
   main.classList.remove('main-narrow');
   renderSidebar(state);
-  sidebar.classList.remove('open');
+  renderTabbar(state);
+  closeDrawer();
 
   const ctx = {
     navigate,
     markSaved,
     rerender: render,
     refreshChrome: (name) => {
-      topbarTitle.textContent = name;
+      const pname = topbarTitle.querySelector('.pname');
+      if (pname) pname.textContent = name;
       renderSidebar(parseHash());
     },
   };
@@ -115,7 +144,9 @@ function render() {
   }
 
   const label = SECTIONS.find(([k]) => k === state.section)?.[1] || '';
-  topbarTitle.textContent = `${project.name} · ${label}`;
+  clear(topbarTitle);
+  topbarTitle.appendChild(h('span', { class: 'pname' }, project.name));
+  topbarTitle.appendChild(h('span', { class: 'psec' }, ` · ${label}`));
   document.title = `${project.name} — umlLight`;
   ctx.project = project;
   ctx.section = state.section;
@@ -124,47 +155,155 @@ function render() {
 }
 
 // ------------------------------------------------------------- settings
-function openSettings() {
+const AI_MODEL_SUGGESTIONS = [
+  'Qwen/Qwen2.5-Coder-32B-Instruct',
+  'Qwen/Qwen2.5-72B-Instruct',
+  'meta-llama/Llama-3.3-70B-Instruct',
+  'deepseek-ai/DeepSeek-V3-0324',
+  'mistralai/Mistral-Small-24B-Instruct-2501',
+];
+
+function openSettings(focus) {
   modal((close) => {
     const s = store.getSettings();
-    const serverInput = textInput(s.server, (val) => store.setSettings({ server: val.trim() }),
-      { placeholder: store.DEFAULT_SERVER });
-    return h('div', {},
-      h('h2', {}, 'Einstellungen'),
-      field('PlantUML-Server', serverInput,
-        'Diagramme werden von diesem Server gerendert. Eigene Instanz möglich (z. B. http://localhost:8080/plantuml). Die Modelle selbst bleiben immer lokal im Browser.'),
+    const set = (patch) => store.setSettings(patch);
+
+    // ---- PlantUML
+    const plantumlCard = h('div', { class: 'card' },
+      h('h3', {}, 'PlantUML'),
+      field('Server', textInput(s.server, (val) => set({ server: val.trim() }), { placeholder: store.DEFAULT_SERVER }),
+        'Diagramme werden von diesem Server gerendert — eigene Instanz möglich, z. B. http://localhost:8080. Die Modelle selbst bleiben immer lokal.'),
       field('Bildformat', select(s.format, [['svg', 'SVG (scharf, skalierbar)'], ['png', 'PNG']],
-        (val) => store.setSettings({ format: val }))),
-      h('div', { class: 'card', style: { marginTop: '14px' } },
-        h('h3', {}, 'Daten'),
-        h('p', { class: 'hint' }, 'Alle Projekte liegen im localStorage dieses Browsers. Für Sicherung oder Umzug ein Backup exportieren.'),
-        h('div', { class: 'btn-row' },
-          h('button', {
-            class: 'btn small',
-            onclick: () => {
-              const blob = store.exportAll();
-              const a = h('a', { href: URL.createObjectURL(new Blob([blob], { type: 'application/json' })), download: 'umllight-backup.json' });
-              document.body.appendChild(a); a.click(); a.remove();
-            },
-          }, 'Backup exportieren'),
-          h('button', {
-            class: 'btn small',
-            onclick: () => { close(); navigate('#/projects'); toast('Import über „Importieren" in der Projektliste'); },
-          }, 'Import öffnen'))),
+        (val) => set({ format: val }))));
+
+    // ---- AI assistant
+    const tokenInput = h('input', {
+      type: 'password', value: s.aiToken || '', placeholder: 'hf_…', autocomplete: 'off', spellcheck: 'false',
+      oninput: (e) => set({ aiToken: e.target.value.trim() }),
+    });
+    const promptArea = h('textarea', {
+      class: 'code', rows: 7, spellcheck: 'false',
+      oninput: (e) => set({ aiSystemPrompt: e.target.value }),
+    }, s.aiSystemPrompt || store.DEFAULT_SYSTEM_PROMPT);
+    const testOut = h('div', { class: 'hint', style: { margin: '6px 0 0' } });
+
+    const testConnection = async (btn) => {
+      btn.disabled = true;
+      testOut.style.color = '';
+      testOut.textContent = 'Teste Verbindung …';
+      try {
+        const { complete, extractPlantUml } = await import('./ai.js');
+        const text = await complete({
+          messages: [
+            { role: 'system', content: store.getSettings().aiSystemPrompt || store.DEFAULT_SYSTEM_PROMPT },
+            { role: 'user', content: 'Erzeuge ein minimales Beispieldiagramm mit zwei Elementen.' },
+          ],
+        });
+        testOut.textContent = extractPlantUml(text)
+          ? 'Verbindung ok — das Modell liefert gültigen PlantUML-Code.'
+          : 'Verbindung ok, aber die Antwort enthielt keinen PlantUML-Block. System-Prompt oder Modell anpassen.';
+      } catch (err) {
+        testOut.style.color = 'var(--danger)';
+        testOut.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    const aiCard = h('div', { class: 'card', id: 'aiSettings' },
+      h('h3', {}, 'KI-Assistent'),
+      h('p', { class: 'hint' },
+        'Erzeugt und ändert Diagramme über die Hugging-Face-Inference-API. Token und Einstellungen bleiben im Browser; beim Generieren werden Anweisung, Diagrammquelle und (optional) Projektkontext an den Endpunkt gesendet.'),
+      h('label', { class: 'row', style: { marginBottom: '12px', gap: '8px' } },
+        h('input', {
+          type: 'checkbox', checked: s.aiEnabled !== false, style: { width: 'auto' },
+          onchange: (e) => set({ aiEnabled: e.target.checked }),
+        }),
+        h('span', {}, 'KI-Assistent aktivieren')),
+      field('Zugriffstoken', h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
+        tokenInput,
+        h('button', {
+          class: 'btn small',
+          onclick: (e) => {
+            tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+            e.target.textContent = tokenInput.type === 'password' ? 'Zeigen' : 'Verbergen';
+          },
+        }, 'Zeigen')),
+        'Auf huggingface.co unter Settings → Access Tokens anlegen (Rolle „read"). Wird unverschlüsselt im localStorage gespeichert — auf geteilten Geräten besser leer lassen.'),
+      h('datalist', { id: 'ai-models' }, AI_MODEL_SUGGESTIONS.map((m) => h('option', { value: m }))),
+      field('Modell', h('input', {
+        type: 'text', value: s.aiModel || '', list: 'ai-models', spellcheck: 'false',
+        oninput: (e) => set({ aiModel: e.target.value.trim() }),
+      }), 'Beliebiges Chat-Modell der Inference-API, optional mit Provider-Suffix (z. B. …:together).'),
+      field('Endpunkt', textInput(s.aiEndpoint, (val) => set({ aiEndpoint: val.trim() }),
+        { placeholder: store.DEFAULT_AI_ENDPOINT, spellcheck: 'false' }),
+        'OpenAI-kompatibler Chat-Completions-Endpunkt. Funktioniert auch mit eigenen Inference-Endpoints.'),
+      field('System-Prompt', promptArea,
+        'Legt fest, wie das Modell antwortet. Standard erzwingt reinen PlantUML-Code.'),
+      h('div', { class: 'grid-2' },
+        field('Temperatur', h('input', {
+          type: 'number', min: '0', max: '2', step: '0.1', value: String(s.aiTemperature ?? 0.2),
+          oninput: (e) => set({ aiTemperature: Number(e.target.value) }),
+        })),
+        field('Max. Tokens', h('input', {
+          type: 'number', min: '128', max: '8192', step: '64', value: String(s.aiMaxTokens ?? 1200),
+          oninput: (e) => set({ aiMaxTokens: Number(e.target.value) }),
+        }))),
+      h('label', { class: 'row', style: { marginBottom: '12px', gap: '8px' } },
+        h('input', {
+          type: 'checkbox', checked: s.aiSendContext !== false, style: { width: 'auto' },
+          onchange: (e) => set({ aiSendContext: e.target.checked }),
+        }),
+        h('span', {}, 'Projektkontext standardmäßig mitsenden')),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn small', onclick: (e) => testConnection(e.target) }, 'Verbindung testen'),
+        h('button', {
+          class: 'btn small ghost',
+          onclick: () => { promptArea.value = store.DEFAULT_SYSTEM_PROMPT; set({ aiSystemPrompt: store.DEFAULT_SYSTEM_PROMPT }); toast('System-Prompt zurückgesetzt'); },
+        }, 'Prompt zurücksetzen')),
+      testOut);
+
+    // ---- data
+    const dataCard = h('div', { class: 'card' },
+      h('h3', {}, 'Daten'),
+      h('p', { class: 'hint' }, 'Alle Projekte liegen im localStorage dieses Browsers. Für Sicherung oder Umzug ein Backup exportieren.'),
+      h('div', { class: 'btn-row' },
+        h('button', {
+          class: 'btn small',
+          onclick: () => { store.flush(); download('umllight-backup.json', store.exportAll()); },
+        }, 'Backup exportieren'),
+        h('button', {
+          class: 'btn small',
+          onclick: () => { close(); navigate('#/projects'); toast('Import über „Importieren" in der Projektliste'); },
+        }, 'Import öffnen')));
+
+    const box = h('div', {},
+      h('h2', {}, 'Einstellungen'),
+      plantumlCard,
+      aiCard,
+      dataCard,
       h('p', { class: 'hint', style: { marginTop: '14px' } },
-        'umlLight ist eine statische PWA — Quellcode und Daten verlassen den Browser nur beim Rendern der Diagramme.'),
+        'umlLight ist eine statische PWA — Daten verlassen den Browser nur beim Rendern von Diagrammen und bei KI-Anfragen.'),
       h('div', { class: 'modal-actions' },
         h('button', { class: 'btn primary', onclick: () => { close(); render(); } }, 'Fertig')));
+
+    if (focus === 'ai') setTimeout(() => aiCard.scrollIntoView({ block: 'start' }), 60);
+    return box;
   });
 }
 
 // ------------------------------------------------------------------ wire
-document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settingsBtn').addEventListener('click', () => openSettings());
+document.addEventListener('umllight:settings', (e) => openSettings(e.detail?.focus));
 document.getElementById('navToggle').addEventListener('click', (e) => {
   e.stopPropagation();
-  sidebar.classList.toggle('open');
+  const open = !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', open);
+  scrim.hidden = !open;
 });
-main.addEventListener('click', () => sidebar.classList.remove('open'));
+scrim.addEventListener('click', closeDrawer);
+main.addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 window.addEventListener('hashchange', render);
 window.addEventListener('online', () => toast('Wieder online — Diagramme können gerendert werden'));
 window.addEventListener('pagehide', () => store.flush());

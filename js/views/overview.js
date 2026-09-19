@@ -1,17 +1,19 @@
 // Project overview: completeness at a glance, all diagrams, spec export.
 
-import { h, clear, download, copyText } from '../ui.js';
+import { h, clear, download, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
-import { useCaseUml, deploymentUml, dataModelUml, viewModelUml, projectMarkdown, ACTIVITY_TEMPLATE } from '../generators.js';
+import { useCaseUml, deploymentUml, dataModelUml, viewModelUml, ACTIVITY_TEMPLATE } from '../generators.js';
+import { openExportDialog } from '../export.js';
 
 const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
 
 function statusRow(label, done, detail, href) {
-  return h('tr', {},
-    h('td', {}, h('a', { href }, label)),
-    h('td', {}, h('span', { class: `chip ${done ? 'on' : ''}` }, done ? 'erfasst' : 'offen')),
-    h('td', { class: 'hint', style: { margin: 0 } }, detail));
+  return [
+    h('a', { href }, label),
+    h('span', { class: `chip ${done ? 'on' : ''}` }, done ? 'erfasst' : 'offen'),
+    h('span', { class: 'hint', style: { margin: 0 } }, detail),
+  ];
 }
 
 export function renderOverview(main, ctx) {
@@ -24,15 +26,14 @@ export function renderOverview(main, ctx) {
       h('h1', {}, p.name),
       h('p', { class: 'hint' }, p.summary || 'Übersicht über die Spezifikation dieser Anwendung.')),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn', onclick: () => download(`${slug(p.name)}-spezifikation.md`, projectMarkdown(p), 'text/markdown') }, 'Markdown exportieren'),
-      h('button', { class: 'btn', onclick: () => copyText(projectMarkdown(p)) }, 'Markdown kopieren'),
+      h('button', { class: 'btn primary', onclick: () => openExportDialog(p) }, 'Markdown exportieren'),
       h('button', { class: 'btn', onclick: () => download(`${slug(p.name)}.json`, store.exportProject(p.id)) }, 'JSON exportieren'))));
 
   const ucCount = (p.useCases.useCases || []).length;
   const vision = p.vision || {};
   main.appendChild(h('div', { class: 'card' },
     h('h2', {}, 'Stand der Spezifikation'),
-    h('div', { class: 'table-wrap' }, h('table', { class: 'grid' }, h('tbody', {},
+    h('div', { class: 'table-wrap' }, gridTable(['Bereich', 'Status', 'Umfang'], [
       statusRow('Produktvision', !!(vision.statement || vision.productName),
         `${(vision.goals || []).filter(Boolean).length} Ziele`, `${base}/vision`),
       statusRow('Use-Case-Modell', ucCount > 0,
@@ -43,7 +44,7 @@ export function renderOverview(main, ctx) {
       statusRow('Datenmodell', (p.dataModel.entities || []).length > 0,
         `${(p.dataModel.entities || []).length} Entitäten · ${(p.dataModel.relations || []).length} Beziehungen`, `${base}/datamodel`),
       statusRow('View-Modell', (p.viewModel.views || []).length > 0,
-        `${(p.viewModel.views || []).length} Views · ${(p.viewModel.activities || []).length} Abläufe`, `${base}/viewmodel`))))));
+        `${(p.viewModel.views || []).length} Views · ${(p.viewModel.activities || []).length} Abläufe`, `${base}/viewmodel`)]))));
 
   const panels = [
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],

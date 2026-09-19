@@ -1,5 +1,5 @@
 /* umlLight service worker — offline app shell + cached diagram renders. */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `umllight-shell-${VERSION}`;
 const DIAGRAM_CACHE = `umllight-diagrams-${VERSION}`;
 
@@ -13,6 +13,9 @@ const SHELL = [
   './js/plantuml.js',
   './js/diagram.js',
   './js/generators.js',
+  './js/ai.js',
+  './js/aipanel.js',
+  './js/export.js',
   './js/views/projects.js',
   './js/views/overview.js',
   './js/views/vision.js',

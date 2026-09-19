@@ -5,6 +5,16 @@ const SETTINGS_KEY = 'umllight.settings.v1';
 export const SCHEMA_VERSION = 1;
 
 export const DEFAULT_SERVER = 'https://www.plantuml.com/plantuml';
+export const DEFAULT_AI_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
+export const DEFAULT_AI_MODEL = 'Qwen/Qwen2.5-Coder-32B-Instruct';
+export const DEFAULT_SYSTEM_PROMPT = `Du bist ein Assistent für UML-Modellierung und gibst ausschließlich PlantUML-Code zurück.
+
+Regeln:
+- Antworte mit genau einem PlantUML-Block, der mit @startuml beginnt und mit @enduml endet.
+- Kein Fließtext, keine Erklärungen, keine Markdown-Codefences außerhalb des Blocks.
+- Verwende die Sprache des Nutzers für Beschriftungen.
+- Behalte vorhandene Elemente und Aliase bei, wenn eine bestehende Quelle mitgeliefert wird, und ändere nur das Verlangte.
+- Halte die Syntax gültig und sparsam: keine erfundenen Direktiven, keine Bilder, keine !include-Anweisungen.`;
 
 let db = null;
 const listeners = new Set();
@@ -179,7 +189,21 @@ export function importJson(text) {
 }
 
 // ---------- settings ----------
-const defaultSettings = { server: DEFAULT_SERVER, format: 'svg', autoRender: true, theme: 'auto' };
+const defaultSettings = {
+  server: DEFAULT_SERVER,
+  format: 'svg',
+  autoRender: true,
+  theme: 'auto',
+  // --- AI assistant (Hugging Face Inference API, OpenAI-compatible route)
+  aiEnabled: true,
+  aiEndpoint: DEFAULT_AI_ENDPOINT,
+  aiModel: DEFAULT_AI_MODEL,
+  aiToken: '',
+  aiSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+  aiTemperature: 0.2,
+  aiMaxTokens: 1200,
+  aiSendContext: true,
+};
 
 export function getSettings() {
   try {

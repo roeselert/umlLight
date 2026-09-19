@@ -1,7 +1,7 @@
 // View model: screens/views with navigation plus free-form activity diagrams.
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
-  confirmDialog, debounce, toast, syncTitle } from '../ui.js';
+  confirmDialog, debounce, toast, syncTitle, moveActions, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { viewModelUml, ACTIVITY_TEMPLATE } from '../generators.js';
@@ -26,6 +26,8 @@ export function renderViewModel(main, ctx) {
 
   navDiagram = diagramPanel({
     title: 'Navigationsdiagramm',
+    project: p,
+    section: 'viewmodel',
     fileName: `${p.name}-viewmodel`,
     generate: () => viewModelUml(vm, p.name),
     getCustom: () => vm.custom,
@@ -59,7 +61,7 @@ export function renderViewModel(main, ctx) {
       viewsWrap.appendChild(withId(listItem({
         title: v.name || 'View',
         meta: v.start ? 'Einstieg' : `${(v.elements || []).length} Elemente`,
-        actions: [h('button', {
+        actions: [...moveActions(vm.views, v.id, () => { patchAndDraw(() => {}); renderViews(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('View löschen?', `„${v.name}" und zugehörige Übergänge werden entfernt.`))) return;
@@ -116,16 +118,16 @@ export function renderViewModel(main, ctx) {
     if (!vm.views.length) { linksWrap.appendChild(h('div', { class: 'empty' }, 'Zuerst Views anlegen.')); return; }
     if (!vm.links.length) { linksWrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Übergänge.')); return; }
     const opts = vm.views.map((v) => [v.id, v.name || 'View']);
-    linksWrap.appendChild(h('table', { class: 'grid' },
-      h('thead', {}, h('tr', {}, ['Von', 'Nach', 'Auslöser', ''].map((t) => h('th', {}, t)))),
-      h('tbody', {}, vm.links.map((l, i) => h('tr', {},
-        h('td', {}, select(l.from, opts, (val) => { l.from = val; patchAndDraw(() => {}); })),
-        h('td', {}, select(l.to, opts, (val) => { l.to = val; patchAndDraw(() => {}); })),
-        h('td', {}, textInput(l.label, (val) => { l.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. Klick auf „Öffnen"' })),
-        h('td', {}, h('button', {
+    linksWrap.appendChild(gridTable(['Von', 'Nach', 'Auslöser', ''],
+      vm.links.map((l, i) => [
+        select(l.from, opts, (val) => { l.from = val; patchAndDraw(() => {}); }),
+        select(l.to, opts, (val) => { l.to = val; patchAndDraw(() => {}); }),
+        textInput(l.label, (val) => { l.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. Klick auf „Öffnen"' }),
+        h('button', {
           class: 'btn small ghost',
           onclick: () => { patchAndDraw((prj) => prj.viewModel.links.splice(i, 1)); renderLinks(); },
-        }, '✕')))))));
+        }, '✕ Entfernen'),
+      ])));
   };
 
   main.appendChild(h('div', { class: 'card' },
@@ -152,7 +154,7 @@ export function renderViewModel(main, ctx) {
     for (const act of vm.activities) {
       actWrap.appendChild(withId(listItem({
         title: act.name || 'Ablauf',
-        actions: [h('button', {
+        actions: [...moveActions(vm.activities, act.id, () => { patch(() => {}); renderActivities(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('Ablauf löschen?', `„${act.name}" wird entfernt.`))) return;
@@ -163,6 +165,8 @@ export function renderViewModel(main, ctx) {
         body: () => {
           const panel = diagramPanel({
             title: act.name || 'Ablauf',
+            project: p,
+            section: 'viewmodel',
             fileName: `${p.name}-${act.name || 'ablauf'}`,
             generate: () => act.uml || ACTIVITY_TEMPLATE,
             getCustom: () => act.uml ?? null,

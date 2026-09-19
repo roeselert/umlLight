@@ -1,7 +1,7 @@
 // Deployment view: node/link model or plain textual description.
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
-  confirmDialog, debounce, toast, syncTitle } from '../ui.js';
+  confirmDialog, debounce, toast, syncTitle, moveActions, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { deploymentUml } from '../generators.js';
@@ -51,6 +51,8 @@ export function renderDeployment(main, ctx) {
 
   diagram = diagramPanel({
     title: 'Deployment-Diagramm',
+    project: p,
+    section: 'deployment',
     fileName: `${p.name}-deployment`,
     generate: () => deploymentUml(dep, p.name),
     getCustom: () => dep.custom,
@@ -85,7 +87,7 @@ export function renderDeployment(main, ctx) {
       nodesWrap.appendChild(withId(listItem({
         title: n.name || 'Knoten',
         meta: (KINDS.find(([k]) => k === n.kind) || [])[1] || 'Knoten',
-        actions: [h('button', {
+        actions: [...moveActions(dep.nodes, n.id, () => { patchAndDraw(() => {}); renderNodes(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('Knoten löschen?', `„${n.name}" und seine Verbindungen werden entfernt.`))) return;
@@ -137,18 +139,17 @@ export function renderDeployment(main, ctx) {
     if (!dep.nodes.length) { linksWrap.appendChild(h('div', { class: 'empty' }, 'Zuerst Knoten anlegen.')); return; }
     if (!dep.links.length) { linksWrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Verbindungen.')); return; }
     const opts = dep.nodes.map((n) => [n.id, n.name || 'Knoten']);
-    const rows = dep.links.map((l, i) => h('tr', {},
-      h('td', {}, select(l.from, opts, (val) => { l.from = val; patchAndDraw(() => {}); })),
-      h('td', {}, select(l.style || 'line', LINK_STYLES, (val) => { l.style = val; patchAndDraw(() => {}); })),
-      h('td', {}, select(l.to, opts, (val) => { l.to = val; patchAndDraw(() => {}); })),
-      h('td', {}, textInput(l.label, (val) => { l.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. HTTPS' })),
-      h('td', {}, h('button', {
+    const rows = dep.links.map((l, i) => [
+      select(l.from, opts, (val) => { l.from = val; patchAndDraw(() => {}); }),
+      select(l.style || 'line', LINK_STYLES, (val) => { l.style = val; patchAndDraw(() => {}); }),
+      select(l.to, opts, (val) => { l.to = val; patchAndDraw(() => {}); }),
+      textInput(l.label, (val) => { l.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. HTTPS' }),
+      h('button', {
         class: 'btn small ghost',
         onclick: () => { patchAndDraw((prj) => prj.deployment.links.splice(i, 1)); renderLinks(); },
-      }, '✕'))));
-    linksWrap.appendChild(h('table', { class: 'grid' },
-      h('thead', {}, h('tr', {}, ['Von', 'Art', 'Nach', 'Bezeichnung', ''].map((t) => h('th', {}, t)))),
-      h('tbody', {}, rows)));
+      }, '✕ Entfernen'),
+    ]);
+    linksWrap.appendChild(gridTable(['Von', 'Art', 'Nach', 'Bezeichnung', ''], rows));
   };
 
   main.appendChild(h('div', { class: 'card' },

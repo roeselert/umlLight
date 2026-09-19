@@ -1,6 +1,7 @@
 // Project list: create, import, export, duplicate, delete.
 
 import { h, clear, toast, confirmDialog, promptDialog, download, pickFile } from '../ui.js';
+import { openExportDialog } from '../export.js';
 import * as store from '../store.js';
 
 const fmtDate = (iso) => {
@@ -47,7 +48,8 @@ export function renderProjects(main, ctx) {
       h('p', { class: 'hint' }, 'Jedes Projekt beschreibt eine Anwendung: Vision, Use Cases, Deployment, Datenmodell und View-Modell. Alles wird lokal im Browser gespeichert.')),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn', onclick: importProject }, 'Importieren'),
-      list.length ? h('button', { class: 'btn', onclick: () => download('umllight-backup.json', store.exportAll()) }, 'Backup') : null,
+      list.length ? h('button', { class: 'btn', onclick: () => openExportDialog(list) }, 'Markdown') : null,
+      list.length ? h('button', { class: 'btn', onclick: () => { store.flush(); download('umllight-backup.json', store.exportAll()); } }, 'Backup') : null,
       h('button', { class: 'btn primary', onclick: newProject }, '+ Neues Projekt'))));
 
   if (!list.length) {
@@ -67,7 +69,8 @@ export function renderProjects(main, ctx) {
       h('p', { class: 'hint' }, counts(p)),
       h('div', { class: 'btn-row' },
         h('a', { class: 'btn small', href: `#/p/${p.id}/vision` }, 'Öffnen'),
-        h('button', { class: 'btn small', onclick: () => download(`${p.name.replace(/[^\w.-]+/g, '_')}.json`, store.exportProject(p.id)) }, 'Export'),
+        h('button', { class: 'btn small', onclick: () => openExportDialog(p) }, 'Markdown'),
+        h('button', { class: 'btn small', onclick: () => { store.flush(); download(`${p.name.replace(/[^\w.-]+/g, '_')}.json`, store.exportProject(p.id)); } }, 'JSON'),
         h('button', { class: 'btn small', onclick: () => { store.duplicateProject(p.id); ctx.rerender(); } }, 'Duplizieren'),
         h('button', {
           class: 'btn small danger',

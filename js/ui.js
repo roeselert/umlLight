@@ -72,24 +72,36 @@ export function toast(message, kind = '') {
   setTimeout(() => el.remove(), kind === 'err' ? 5000 : 2400);
 }
 
-/** Generic modal. render(close) must return a Node. */
+/**
+ * Generic modal. render(close) must return a Node.
+ * Dialogs stack: opening one from inside another keeps the parent alive.
+ */
 export function modal(render) {
   const root = document.getElementById('modalRoot');
-  const close = (result) => {
-    root.hidden = true;
-    clear(root);
-    document.removeEventListener('keydown', onKey);
-    if (typeof resolveFn === 'function') resolveFn(result);
-  };
   let resolveFn = null;
   const promise = new Promise((res) => { resolveFn = res; });
-  const onKey = (e) => { if (e.key === 'Escape') close(undefined); };
+
+  const layer = h('div', { class: 'modal-layer' });
+  const close = (result) => {
+    document.removeEventListener('keydown', onKey);
+    layer.remove();
+    if (!root.children.length) root.hidden = true;
+    if (typeof resolveFn === 'function') resolveFn(result);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape' && layer === root.lastElementChild) {
+      e.stopPropagation();
+      close(undefined);
+    }
+  };
   document.addEventListener('keydown', onKey);
-  clear(root);
+
   const box = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, render(close));
-  root.appendChild(box);
+  layer.appendChild(box);
+  layer.addEventListener('click', (e) => { if (e.target === layer) close(undefined); });
+  root.appendChild(layer);
   root.hidden = false;
-  root.onclick = (e) => { if (e.target === root) close(undefined); };
+
   const focusable = box.querySelector('input, textarea, select, button');
   if (focusable) setTimeout(() => focusable.focus(), 30);
   return promise;
@@ -139,6 +151,39 @@ export function listItem({ title, meta, open = false, onToggle, actions = [], bo
       h('span', { class: 'no-toggle row', style: { gap: '6px' } }, actions)),
     bodyEl);
   return item;
+}
+
+/**
+ * Up/down buttons for reordering a list. Works on touch devices, where HTML5
+ * drag & drop does not.
+ */
+export function moveActions(list, id, after) {
+  const idx = list.findIndex((x) => x.id === id);
+  const mk = (dir, label, title) => h('button', {
+    class: 'btn small ghost move-btn',
+    title,
+    'aria-label': title,
+    disabled: dir < 0 ? idx <= 0 : idx >= list.length - 1,
+    onclick: (e) => {
+      e.stopPropagation();
+      const j = idx + dir;
+      if (j < 0 || j >= list.length) return;
+      [list[idx], list[j]] = [list[j], list[idx]];
+      after();
+    },
+  }, label);
+  return [mk(-1, '↑', 'Nach oben'), mk(1, '↓', 'Nach unten')];
+}
+
+/**
+ * Table with cells labelled by their column header, so narrow screens can
+ * render each row as a stacked card (see the CSS for table.grid).
+ */
+export function gridTable(headers, rows) {
+  return h('table', { class: 'grid' },
+    h('thead', {}, h('tr', {}, headers.map((t) => h('th', {}, t)))),
+    h('tbody', {}, rows.map((cells) => h('tr', {},
+      cells.map((c, i) => h('td', { 'data-label': headers[i] || '' }, c))))));
 }
 
 /** Simple drag & drop reordering for a container of .item elements. */

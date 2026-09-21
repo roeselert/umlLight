@@ -1,7 +1,7 @@
 // Use-case model: actors, use cases, relations, scenario steps.
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
-  confirmDialog, debounce, toast, syncTitle } from '../ui.js';
+  confirmDialog, debounce, toast, syncTitle, moveActions } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { useCaseUml, useCaseScenarioUml } from '../generators.js';
@@ -28,6 +28,8 @@ export function renderUseCases(main, ctx) {
 
   diagram = diagramPanel({
     title: 'Use-Case-Diagramm',
+    project: p,
+    section: 'usecases',
     fileName: `${p.name}-usecases`,
     generate: () => useCaseUml(uc, p.name),
     getCustom: () => uc.custom,
@@ -50,7 +52,7 @@ export function renderUseCases(main, ctx) {
       actorsWrap.appendChild(withId(listItem({
         title: a.name || 'Akteur',
         meta: `${used} UC`,
-        actions: [h('button', {
+        actions: [...moveActions(uc.actors, a.id, () => { patchAndDraw(() => {}); renderActors(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('Akteur löschen?', `„${a.name}" und alle Zuordnungen werden entfernt.`))) return;
@@ -151,6 +153,8 @@ export function renderUseCases(main, ctx) {
   function useCaseBody(c) {
     const scenario = diagramPanel({
       title: 'Ablauf (Aktivitätsdiagramm)',
+      project: p,
+      section: 'usecases',
       fileName: `${p.name}-${c.name || 'uc'}`,
       generate: () => useCaseScenarioUml(c, uc.actors),
       getCustom: () => c.customUml ?? null,
@@ -204,7 +208,7 @@ export function renderUseCases(main, ctx) {
       ucWrap.appendChild(withId(listItem({
         title: c.name || 'Use Case',
         meta: actorNames,
-        actions: [h('button', {
+        actions: [...moveActions(uc.useCases, c.id, () => { patchAndDraw(() => {}); renderUseCaseList(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('Use Case löschen?', `„${c.name}" wird entfernt.`))) return;

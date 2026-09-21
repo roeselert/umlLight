@@ -1,7 +1,7 @@
 // Data model: entities with attributes plus typed relations (ER-style class diagram).
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
-  confirmDialog, debounce, toast, syncTitle } from '../ui.js';
+  confirmDialog, debounce, toast, syncTitle, moveActions, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { dataModelUml } from '../generators.js';
@@ -34,6 +34,8 @@ export function renderDataModel(main, ctx) {
 
   diagram = diagramPanel({
     title: 'Datenmodell-Diagramm',
+    project: p,
+    section: 'datamodel',
     fileName: `${p.name}-datamodel`,
     generate: () => dataModelUml(dm, p.name),
     getCustom: () => dm.custom,
@@ -47,24 +49,23 @@ export function renderDataModel(main, ctx) {
     const rebuild = () => {
       clear(wrap);
       e.attributes ||= [];
-      const body = h('tbody', {}, e.attributes.map((a, i) => h('tr', {},
-        h('td', {}, textInput(a.name, (val) => { a.name = val; save(() => {}); redrawSoon(); }, { placeholder: 'name' })),
-        h('td', {}, h('input', {
+      const rows = e.attributes.map((a, i) => [
+        textInput(a.name, (val) => { a.name = val; save(() => {}); redrawSoon(); }, { placeholder: 'name' }),
+        h('input', {
           type: 'text', value: a.type || '', list: 'dm-types', placeholder: 'Typ',
           oninput: (ev) => { a.type = ev.target.value; save(() => {}); redrawSoon(); },
-        })),
-        h('td', {}, select(a.key || '', KEYS, (val) => { a.key = val; patchAndDraw(() => {}); })),
-        h('td', { style: { textAlign: 'center' } }, h('input', {
-          type: 'checkbox', checked: !!a.required,
+        }),
+        select(a.key || '', KEYS, (val) => { a.key = val; patchAndDraw(() => {}); }),
+        h('label', { class: 'row', style: { gap: '6px' } }, h('input', {
+          type: 'checkbox', checked: !!a.required, style: { width: 'auto' },
           onchange: (ev) => { a.required = ev.target.checked; patchAndDraw(() => {}); },
-        })),
-        h('td', {}, h('button', {
+        }), h('span', { class: 'only-narrow-inline hint', style: { margin: 0 } }, 'Pflichtfeld')),
+        h('button', {
           class: 'btn small ghost',
           onclick: () => { e.attributes.splice(i, 1); patchAndDraw(() => {}); rebuild(); },
-        }, '✕')))));
-      wrap.appendChild(h('table', { class: 'grid' },
-        h('thead', {}, h('tr', {}, ['Attribut', 'Typ', 'Schlüssel', 'Pflicht', ''].map((t) => h('th', {}, t)))),
-        body));
+        }, '✕ Entfernen'),
+      ]);
+      wrap.appendChild(gridTable(['Attribut', 'Typ', 'Schlüssel', 'Pflicht', ''], rows));
       wrap.appendChild(h('button', {
         class: 'btn small', style: { marginTop: '8px' },
         onclick: () => {
@@ -87,7 +88,7 @@ export function renderDataModel(main, ctx) {
       entWrap.appendChild(withId(listItem({
         title: e.name || 'Entität',
         meta: `${(e.attributes || []).length} Attribute`,
-        actions: [h('button', {
+        actions: [...moveActions(dm.entities, e.id, () => { patchAndDraw(() => {}); renderEntities(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
             if (!(await confirmDialog('Entität löschen?', `„${e.name}" und ihre Beziehungen werden entfernt.`))) return;
@@ -138,17 +139,17 @@ export function renderDataModel(main, ctx) {
     if (!dm.entities.length) { relWrap.appendChild(h('div', { class: 'empty' }, 'Zuerst Entitäten anlegen.')); return; }
     if (!dm.relations.length) { relWrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Beziehungen.')); return; }
     const opts = dm.entities.map((e) => [e.id, e.name || 'Entität']);
-    relWrap.appendChild(h('table', { class: 'grid' },
-      h('thead', {}, h('tr', {}, ['Von', 'Beziehung', 'Nach', 'Bezeichnung', ''].map((t) => h('th', {}, t)))),
-      h('tbody', {}, dm.relations.map((r, i) => h('tr', {},
-        h('td', {}, select(r.from, opts, (val) => { r.from = val; patchAndDraw(() => {}); })),
-        h('td', {}, select(r.type || '1-n', REL_TYPES, (val) => { r.type = val; patchAndDraw(() => {}); })),
-        h('td', {}, select(r.to, opts, (val) => { r.to = val; patchAndDraw(() => {}); })),
-        h('td', {}, textInput(r.label, (val) => { r.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. besitzt' })),
-        h('td', {}, h('button', {
+    relWrap.appendChild(gridTable(['Von', 'Beziehung', 'Nach', 'Bezeichnung', ''],
+      dm.relations.map((r, i) => [
+        select(r.from, opts, (val) => { r.from = val; patchAndDraw(() => {}); }),
+        select(r.type || '1-n', REL_TYPES, (val) => { r.type = val; patchAndDraw(() => {}); }),
+        select(r.to, opts, (val) => { r.to = val; patchAndDraw(() => {}); }),
+        textInput(r.label, (val) => { r.label = val; save(() => {}); redrawSoon(); }, { placeholder: 'z. B. besitzt' }),
+        h('button', {
           class: 'btn small ghost',
           onclick: () => { patchAndDraw((prj) => prj.dataModel.relations.splice(i, 1)); renderRelations(); },
-        }, '✕')))))));
+        }, '✕ Entfernen'),
+      ])));
   };
 
   main.appendChild(h('div', { class: 'card' },

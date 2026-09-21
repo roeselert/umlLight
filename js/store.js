@@ -2,9 +2,12 @@
 
 const KEY = 'umllight.db.v1';
 const SETTINGS_KEY = 'umllight.settings.v1';
+const GIT_TOKEN_KEY = 'umllight.gittoken.v1';
+const GIT_STATE_KEY = 'umllight.gitstate.v1';
 export const SCHEMA_VERSION = 1;
 
 export const DEFAULT_SERVER = 'https://www.plantuml.com/plantuml';
+export const DEFAULT_GIT_API = 'https://api.github.com';
 export const DEFAULT_AI_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 export const DEFAULT_AI_MODEL = 'Qwen/Qwen2.5-Coder-32B-Instruct';
 export const DEFAULT_SYSTEM_PROMPT = `Du bist ein Assistent für UML-Modellierung und gibst ausschließlich PlantUML-Code zurück.
@@ -170,6 +173,17 @@ export function flush() {
   if (pendingSave) { clearTimeout(pendingSave); pendingSave = null; save(); }
 }
 
+/** Overwrite a project's content in place, keeping its local id. */
+export function replaceProject(id, data) {
+  const d = load();
+  const idx = d.projects.findIndex((p) => p.id === id);
+  if (idx < 0) return null;
+  const next = normalizeProject({ ...data, id });
+  d.projects[idx] = next;
+  save();
+  return next;
+}
+
 export function exportProject(id) {
   const p = getProject(id);
   if (!p) return null;
@@ -203,6 +217,16 @@ const defaultSettings = {
   aiTemperature: 0.2,
   aiMaxTokens: 1200,
   aiSendContext: true,
+  // --- GitHub synchronisation
+  gitEnabled: true,
+  gitApiBase: DEFAULT_GIT_API,
+  gitOwner: '',
+  gitRepo: '',
+  gitBranch: '',
+  gitPath: 'umllight',
+  gitTokenScope: 'local',
+  gitAuthorName: '',
+  gitAuthorEmail: '',
 };
 
 export function getSettings() {
@@ -217,4 +241,52 @@ export function setSettings(patch) {
   const next = { ...getSettings(), ...patch };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   return next;
+}
+
+// ---------- GitHub token ----------
+// Kept out of the settings blob so it can live in sessionStorage when the
+// user does not want it to survive the tab.
+export function getGitToken() {
+  try {
+    return sessionStorage.getItem(GIT_TOKEN_KEY) || localStorage.getItem(GIT_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setGitToken(token, scope = 'local') {
+  try {
+    sessionStorage.removeItem(GIT_TOKEN_KEY);
+    localStorage.removeItem(GIT_TOKEN_KEY);
+    if (token) (scope === 'session' ? sessionStorage : localStorage).setItem(GIT_TOKEN_KEY, token);
+  } catch { /* storage blocked */ }
+}
+
+// ---------- per-project sync state ----------
+// { [projectId]: { repo, branch, path, blobSha, commitSha, syncedHash, syncedAt } }
+export function allGitStates() {
+  try {
+    return JSON.parse(localStorage.getItem(GIT_STATE_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+export const getGitState = (projectId) => allGitStates()[projectId] || null;
+
+export function setGitState(projectId, patch) {
+  const all = allGitStates();
+  all[projectId] = patch === null ? undefined : { ...(all[projectId] || {}), ...patch };
+  if (patch === null) delete all[projectId];
+  localStorage.setItem(GIT_STATE_KEY, JSON.stringify(all));
+  return all[projectId] || null;
+}
+
+export const clearGitState = (projectId) => setGitState(projectId, null);
+
+/** Stable JSON of a project for change detection (volatile fields removed). */
+export function projectFingerprintSource(project) {
+  const copy = JSON.parse(JSON.stringify(project));
+  delete copy.updatedAt;
+  return JSON.stringify(copy);
 }

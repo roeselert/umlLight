@@ -1,5 +1,5 @@
 /* umlLight service worker — offline app shell + cached diagram renders. */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `umllight-shell-${VERSION}`;
 const DIAGRAM_CACHE = `umllight-diagrams-${VERSION}`;
 
@@ -16,6 +16,9 @@ const SHELL = [
   './js/ai.js',
   './js/aipanel.js',
   './js/export.js',
+  './js/github.js',
+  './js/gitsync.js',
+  './js/gitpanel.js',
   './js/views/projects.js',
   './js/views/overview.js',
   './js/views/vision.js',
@@ -53,8 +56,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   const sameOrigin = url.origin === self.location.origin;
 
-  // Diagram renders from the PlantUML server: network first, cached copy as fallback.
+  // Cross-origin: only rendered diagrams are cached (network first, cached copy
+  // as fallback). API traffic — GitHub, the AI endpoint — must never be served
+  // from cache, or stale blob shas would break conflict detection.
   if (!sameOrigin) {
+    if (request.destination !== 'image') return;
     event.respondWith((async () => {
       try {
         const res = await fetch(request);

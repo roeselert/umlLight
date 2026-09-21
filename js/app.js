@@ -263,6 +263,95 @@ function openSettings(focus) {
         }, 'Prompt zurücksetzen')),
       testOut);
 
+
+    // ---- GitHub
+    const gitTokenInput = h('input', {
+      type: 'password', value: store.getGitToken(), placeholder: 'github_pat_… / ghp_…',
+      autocomplete: 'off', spellcheck: 'false',
+      oninput: (e) => store.setGitToken(e.target.value.trim(), store.getSettings().gitTokenScope),
+    });
+    const ownerInput = textInput(s.gitOwner, (val) => set({ gitOwner: val.trim() }), { placeholder: 'benutzer-oder-organisation', spellcheck: 'false' });
+    const repoInput = textInput(s.gitRepo, (val) => set({ gitRepo: val.trim() }), { placeholder: 'repository', spellcheck: 'false' });
+    const branchInput = h('input', {
+      type: 'text', value: s.gitBranch || '', list: 'git-branches', placeholder: 'leer = Standard-Branch', spellcheck: 'false',
+      oninput: (e) => set({ gitBranch: e.target.value.trim() }),
+    });
+    const branchList = h('datalist', { id: 'git-branches' });
+    const gitOut = h('div', { class: 'hint', style: { margin: '6px 0 0' } });
+
+    const prefillFromUrl = () => {
+      const host = location.hostname;
+      const seg = location.pathname.split('/').filter(Boolean);
+      if (!host.endsWith('.github.io')) { gitOut.textContent = 'Nur auf github.io-Adressen möglich.'; return; }
+      const owner = host.split('.')[0];
+      const repo = seg[0] || `${owner}.github.io`;
+      ownerInput.value = owner;
+      repoInput.value = repo;
+      set({ gitOwner: owner, gitRepo: repo });
+      gitOut.textContent = `Übernommen: ${owner}/${repo}`;
+    };
+
+    const checkRepo = async (btn) => {
+      btn.disabled = true;
+      gitOut.style.color = '';
+      gitOut.textContent = 'Prüfe Repository …';
+      try {
+        const gh = await import('./github.js');
+        const repo = await gh.getRepo();
+        const branches = await gh.listBranches();
+        clear(branchList);
+        branches.forEach((b) => branchList.appendChild(h('option', { value: b })));
+        const perms = repo.permissions || {};
+        gitOut.textContent = `${repo.full_name} · Standard-Branch: ${repo.default_branch} · ${branches.length} Branches`
+          + (perms.push === false ? ' · Achtung: kein Schreibzugriff mit diesem Token' : '');
+      } catch (err) {
+        gitOut.style.color = 'var(--danger)';
+        gitOut.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    const gitCard = h('div', { class: 'card', id: 'gitSettings' },
+      h('h3', {}, 'GitHub-Synchronisation'),
+      h('p', { class: 'hint' },
+        'Speichert je Projekt eine JSON-Datei im Repository und holt Änderungen wieder zurück. Benötigt einen feingranularen Token mit „Contents: read and write" (für Pull Requests zusätzlich „Pull requests: write").'),
+      h('label', { class: 'row', style: { marginBottom: '12px', gap: '8px' } },
+        h('input', {
+          type: 'checkbox', checked: s.gitEnabled !== false, style: { width: 'auto' },
+          onchange: (e) => set({ gitEnabled: e.target.checked }),
+        }),
+        h('span', {}, 'Synchronisation aktivieren')),
+      field('Zugriffstoken', h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
+        gitTokenInput,
+        h('button', {
+          class: 'btn small',
+          onclick: (e) => {
+            gitTokenInput.type = gitTokenInput.type === 'password' ? 'text' : 'password';
+            e.target.textContent = gitTokenInput.type === 'password' ? 'Zeigen' : 'Verbergen';
+          },
+        }, 'Zeigen'))),
+      field('Token speichern', select(s.gitTokenScope || 'local',
+        [['local', 'dauerhaft in diesem Browser'], ['session', 'nur für diese Sitzung']],
+        (val) => { set({ gitTokenScope: val }); store.setGitToken(gitTokenInput.value.trim(), val); })),
+      h('div', { class: 'grid-2' },
+        field('Owner', ownerInput),
+        field('Repository', repoInput)),
+      h('div', { class: 'grid-2' },
+        field('Branch', h('div', {}, branchInput, branchList), 'Nach „Repository prüfen" als Vorschlagsliste verfügbar.'),
+        field('Verzeichnis', textInput(s.gitPath, (val) => set({ gitPath: val.trim() }), { placeholder: 'umllight', spellcheck: 'false' }))),
+      h('div', { class: 'grid-2' },
+        field('Commit-Autor (optional)', textInput(s.gitAuthorName, (val) => set({ gitAuthorName: val.trim() }))),
+        field('E-Mail (optional)', textInput(s.gitAuthorEmail, (val) => set({ gitAuthorEmail: val.trim() }))))
+      ,
+      field('API-Basis', textInput(s.gitApiBase, (val) => set({ gitApiBase: val.trim() }),
+        { placeholder: store.DEFAULT_GIT_API, spellcheck: 'false' }),
+        'Für GitHub Enterprise, z. B. https://github.firma.de/api/v3'),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn small', onclick: (e) => checkRepo(e.target) }, 'Repository prüfen'),
+        h('button', { class: 'btn small ghost', onclick: prefillFromUrl }, 'Aus Adresse übernehmen')),
+      gitOut);
+
     // ---- data
     const dataCard = h('div', { class: 'card' },
       h('h3', {}, 'Daten'),
@@ -281,13 +370,15 @@ function openSettings(focus) {
       h('h2', {}, 'Einstellungen'),
       plantumlCard,
       aiCard,
+      gitCard,
       dataCard,
       h('p', { class: 'hint', style: { marginTop: '14px' } },
         'umlLight ist eine statische PWA — Daten verlassen den Browser nur beim Rendern von Diagrammen und bei KI-Anfragen.'),
       h('div', { class: 'modal-actions' },
         h('button', { class: 'btn primary', onclick: () => { close(); render(); } }, 'Fertig')));
 
-    if (focus === 'ai') setTimeout(() => aiCard.scrollIntoView({ block: 'start' }), 60);
+    const focusTarget = { ai: aiCard, git: gitCard }[focus];
+    if (focusTarget) setTimeout(() => focusTarget.scrollIntoView({ block: 'start' }), 60);
     return box;
   });
 }

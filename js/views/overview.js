@@ -5,6 +5,9 @@ import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { useCaseUml, deploymentUml, dataModelUml, viewModelUml, ACTIVITY_TEMPLATE } from '../generators.js';
 import { openExportDialog } from '../export.js';
+import * as gh from '../github.js';
+import * as sync from '../gitsync.js';
+import { openGitDialog, statusChip } from '../gitpanel.js';
 
 const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
 
@@ -14,6 +17,23 @@ function statusRow(label, done, detail, href) {
     h('span', { class: `chip ${done ? 'on' : ''}` }, done ? 'erfasst' : 'offen'),
     h('span', { class: 'hint', style: { margin: 0 } }, detail),
   ];
+}
+
+function gitCard(p, ctx) {
+  const state = sync.linkOf(p);
+  const chipHolder = h('span', {});
+  const detail = h('span', { class: 'hint', style: { margin: 0 } },
+    state ? `${state.repo || gh.repoKey()} · ${state.branch} · ${state.path}` : `${gh.repoKey()} · noch nicht verknüpft`);
+  sync.quickStatus(p).then(({ status }) => chipHolder.appendChild(statusChip(status))).catch(() => {});
+  return h('div', { class: 'card' },
+    h('div', { class: 'card-head' },
+      h('h2', {}, 'Repository'),
+      chipHolder),
+    h('div', { class: 'row' },
+      detail,
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn small', onclick: () => openGitDialog(p, () => ctx.rerender()) },
+        state ? 'Synchronisieren' : 'Verknüpfen')));
 }
 
 export function renderOverview(main, ctx) {
@@ -27,7 +47,10 @@ export function renderOverview(main, ctx) {
       h('p', { class: 'hint' }, p.summary || 'Übersicht über die Spezifikation dieser Anwendung.')),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn primary', onclick: () => openExportDialog(p) }, 'Markdown exportieren'),
-      h('button', { class: 'btn', onclick: () => download(`${slug(p.name)}.json`, store.exportProject(p.id)) }, 'JSON exportieren'))));
+      h('button', { class: 'btn', onclick: () => download(`${slug(p.name)}.json`, store.exportProject(p.id)) }, 'JSON exportieren'),
+      gh.isConfigured() ? h('button', { class: 'btn', onclick: () => openGitDialog(p, () => ctx.rerender()) }, 'Mit Repository synchronisieren') : null)));
+
+  if (gh.isConfigured()) main.appendChild(gitCard(p, ctx));
 
   const ucCount = (p.useCases.useCases || []).length;
   const vision = p.vision || {};

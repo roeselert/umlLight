@@ -72,24 +72,36 @@ export function toast(message, kind = '') {
   setTimeout(() => el.remove(), kind === 'err' ? 5000 : 2400);
 }
 
-/** Generic modal. render(close) must return a Node. */
+/**
+ * Generic modal. render(close) must return a Node.
+ * Dialogs stack: opening one from inside another keeps the parent alive.
+ */
 export function modal(render) {
   const root = document.getElementById('modalRoot');
-  const close = (result) => {
-    root.hidden = true;
-    clear(root);
-    document.removeEventListener('keydown', onKey);
-    if (typeof resolveFn === 'function') resolveFn(result);
-  };
   let resolveFn = null;
   const promise = new Promise((res) => { resolveFn = res; });
-  const onKey = (e) => { if (e.key === 'Escape') close(undefined); };
+
+  const layer = h('div', { class: 'modal-layer' });
+  const close = (result) => {
+    document.removeEventListener('keydown', onKey);
+    layer.remove();
+    if (!root.children.length) root.hidden = true;
+    if (typeof resolveFn === 'function') resolveFn(result);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape' && layer === root.lastElementChild) {
+      e.stopPropagation();
+      close(undefined);
+    }
+  };
   document.addEventListener('keydown', onKey);
-  clear(root);
+
   const box = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, render(close));
-  root.appendChild(box);
+  layer.appendChild(box);
+  layer.addEventListener('click', (e) => { if (e.target === layer) close(undefined); });
+  root.appendChild(layer);
   root.hidden = false;
-  root.onclick = (e) => { if (e.target === root) close(undefined); };
+
   const focusable = box.querySelector('input, textarea, select, button');
   if (focusable) setTimeout(() => focusable.focus(), 30);
   return promise;

@@ -17,6 +17,7 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Markdown-Export |
 | **KI-Assistent** | Diagramme per Anweisung erzeugen oder ändern — über die Hugging-Face-Inference-API, Modell/Token/System-Prompt frei konfigurierbar |
 | **Markdown-Export** | Spezifikation als Markdown, wahlweise mit Inhaltsverzeichnis, PlantUML-Quelltext und/oder Diagramm-Bildlinks; einzeln oder alle Projekte in einem Dokument |
+| **GitHub-Sync** | Projekte als JSON im Repository versionieren: Push, Pull, Konflikterkennung, Pull Requests, Commit-Verlauf mit Wiederherstellen, Import aus dem Repository |
 
 Jedes generierte Diagramm kann per **„Quelle → Überschreiben"** durch handgeschriebenes PlantUML ersetzt
 und jederzeit wieder auf die generierte Fassung zurückgesetzt werden.
@@ -44,6 +45,53 @@ Einrichtung unter **Einstellungen → KI-Assistent**:
 Prompt zusammenpassen. Der Token wird **unverschlüsselt im localStorage**
 gespeichert und ausschließlich als `Authorization`-Header an den konfigurierten
 Endpunkt geschickt — auf geteilten Geräten besser leer lassen.
+
+## GitHub-Synchronisation
+
+Jedes Projekt kann als JSON-Datei in einem Repository liegen — versioniert,
+reviewbar, zwischen Geräten teilbar. Die App spricht die GitHub-REST-API direkt
+aus dem Browser an: kein Server, kein Proxy.
+
+**Einrichten** unter *Einstellungen → GitHub-Synchronisation*:
+
+1. Feingranularen Token auf github.com unter *Settings → Developer settings →
+   Personal access tokens → Fine-grained tokens* anlegen, auf genau dieses
+   Repository beschränken, Berechtigung **Contents: read and write**
+   (für Pull Requests zusätzlich **Pull requests: write**).
+2. Owner und Repository eintragen — auf einer `*.github.io`-Adresse füllt
+   „Aus Adresse übernehmen" beides vor.
+3. Optional Branch und Verzeichnis (Standard: `umllight`), Commit-Autor,
+   sowie für GitHub Enterprise eine eigene API-Basis.
+4. „Repository prüfen" bestätigt Zugriff, Standard-Branch und Schreibrecht und
+   füllt die Branch-Vorschläge.
+
+**Ablauf.** In der Projektübersicht oder der Projektliste öffnet „Synchronisieren"
+den Sync-Dialog. Der erste Push legt `umllight/<projekt>.json` an; danach zeigt
+der Dialog den Zustand:
+
+| Status | Bedeutung | Angebotene Aktionen |
+| --- | --- | --- |
+| nicht verknüpft | nur lokal vorhanden | Verknüpfen & pushen |
+| synchron | identisch mit dem Branch | — |
+| lokal geändert | seit dem letzten Sync bearbeitet | Commit & Push, Pull Request |
+| entfernt geändert | jemand hat im Repository committet | Pull |
+| divergiert | beides | Remote übernehmen, Force-Push, Pull Request |
+| im Repository entfernt | Datei gelöscht oder verschoben | neu anlegen, Verknüpfung lösen |
+
+Erkannt wird das über die Blob-`sha` des letzten Syncs plus einen lokalen
+Inhalts-Hash — es wird nie stillschweigend gemergt, die Entscheidung liegt immer
+beim Nutzer. Commits entstehen über die Git-Data-API (Blob → Tree → Commit →
+Ref), also als **ein** Commit pro Push mit sauberer Historie.
+
+Weiter im Dialog: **Verlauf** listet die Commits der Datei, jede Version lässt
+sich auf GitHub öffnen oder lokal wiederherstellen (landet erst mit dem nächsten
+Push im Repository). **Als Pull Request** committet auf einen frischen Branch
+`umllight/<projekt>-<zeitstempel>` und öffnet den PR gegen den verfolgten Branch.
+In der Projektliste holt **Aus Repository** Projekte, die dort liegen, aber
+lokal fehlen.
+
+Der Token wird nur als `Authorization`-Header an die konfigurierte API-Basis
+geschickt und wahlweise dauerhaft oder nur für die aktuelle Sitzung gespeichert.
 
 ## Mobile Nutzung
 
@@ -78,6 +126,7 @@ Ein Webserver ist nötig (ES-Module und Service Worker laufen nicht über `file:
 
 * Alle Projekte liegen im `localStorage` des Browsers — es gibt keinen Server und keine Anmeldung.
 * Der KI-Assistent sendet nur bei aktiver Nutzung Daten (Anweisung, Diagrammquelle, optionaler Projektkontext) an den eingestellten Endpunkt.
+* Die GitHub-Synchronisation läuft ausschließlich manuell — es wird nichts im Hintergrund gepusht oder geholt.
 * Beim Rendern wird **nur der PlantUML-Quelltext des jeweiligen Diagramms** (komprimiert und kodiert in der URL)
   an den eingestellten PlantUML-Server geschickt. Voreinstellung: `https://www.plantuml.com/plantuml`.
 * Für vertrauliche Inhalte in den Einstellungen einen eigenen Server eintragen, z. B.:
@@ -103,6 +152,9 @@ js/generators.js      Modell → PlantUML
 js/export.js          Markdown-Export inkl. Optionsdialog
 js/ai.js              Hugging-Face-Client (Streaming, PlantUML-Extraktion)
 js/aipanel.js         KI-Dialog je Diagramm
+js/github.js          GitHub-REST-Client (Git-Data-API, atomare Commits)
+js/gitsync.js         Sync-Logik: Status, Push, Pull, PR, Verlauf, Import
+js/gitpanel.js        Sync- und Import-Dialog
 js/views/*.js         Die sechs Bereiche der Anwendung
 sw.js                 Service Worker (App-Shell offline, Diagramm-Cache)
 ```

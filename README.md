@@ -9,7 +9,7 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | Bereich | Inhalt |
 | --- | --- |
 | **Projekte** | Anlegen, duplizieren, löschen, als JSON exportieren/importieren, Gesamt-Backup |
-| **Produktvision** | Elevator-Pitch-Vorlage mit Satzgenerator, Ziele, Nicht-Ziele, Rahmenbedingungen |
+| **Produktvision** | Kurzbeschreibung, Ziele, Nicht-Ziele, Rahmenbedingungen |
 | **Use-Case-Modell** | Akteure, Use Cases mit Priorität/Vorbedingung/Ergebnis, `include`/`extend`, Ablaufschritte inkl. Entscheidungen → Use-Case-Diagramm + Aktivitätsdiagramm je Use Case |
 | **Deployment** | Wahlweise Knotenmodell (verschachtelbar, Artefakte, Verbindungen) **oder** reine Textbeschreibung → Deployment-Diagramm |
 | **Datenmodell** | Entitäten mit Attributen (Typ, PK/FK, Pflicht) und typisierten Beziehungen (1:n, n:m, Vererbung, Komposition …) → ER-Diagramm |
@@ -17,10 +17,34 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Markdown-Export |
 | **KI-Assistent** | Diagramme per Anweisung erzeugen oder ändern — über die Hugging-Face-Inference-API, Modell/Token/System-Prompt frei konfigurierbar |
 | **Markdown-Export** | Spezifikation als Markdown, wahlweise mit Inhaltsverzeichnis, PlantUML-Quelltext und/oder Diagramm-Bildlinks; einzeln oder alle Projekte in einem Dokument |
-| **GitHub-Sync** | Projekte als JSON im Repository versionieren: Push, Pull, Konflikterkennung, Pull Requests, Commit-Verlauf mit Wiederherstellen, Import aus dem Repository |
+| **API & Schemas** | OpenAPI-3.1-Spezifikation und Avro-Records aus dem Datenmodell, mit Optionen, eigener Fassung und Export |
+| **GitHub-Sync** | Projekte als JSON in einem frei wählbaren Repository versionieren: Push, Pull, Konflikterkennung, Pull Requests, Commit-Verlauf mit Wiederherstellen, Import |
 
 Jedes generierte Diagramm kann per **„Quelle → Überschreiben"** durch handgeschriebenes PlantUML ersetzt
 und jederzeit wieder auf die generierte Fassung zurückgesetzt werden.
+
+## API & Schemas
+
+Aus dem Datenmodell entstehen zwei Artefakte, die sich unabhängig voneinander
+konfigurieren, überschreiben und exportieren lassen:
+
+**OpenAPI 3.1** — `components.schemas` je Entität plus, auf Wunsch, vollständige
+CRUD-Endpunkte (`GET`/`POST` auf der Sammlung, `GET`/`PATCH`/`DELETE` auf dem
+Element) mit Paginierungsparametern und Fehlerantworten. Einstellbar sind Titel,
+Version, Server-URL, Authentifizierung (keine, Bearer/JWT, API-Key, OAuth2),
+Ausgabeformat (YAML oder JSON) und die Pfadform — englischer Plural (`/orders`)
+oder die Entität unverändert (`/auftrag`), was bei deutschen Namen meist besser
+passt. Vererbung wird zu `allOf`, Beziehungen werden zu Fremdschlüsselfeldern.
+
+**Avro** — ein Record je Entität mit Namespace, logischen Typen
+(`uuid`, `date`, `timestamp-millis`), nullable Unions mit `default: null` für
+optionale Felder und Referenzfeldern aus den Beziehungen. Download als eine
+Datei mit allen Records oder je Record einzeln (`.avsc`), wie es Schema-
+Registries erwarten.
+
+Beide Fassungen lassen sich per „Überschreiben" von Hand weiterschreiben und
+jederzeit auf die generierte Fassung zurücksetzen; der KI-Assistent arbeitet hier
+mit einem eigenen System-Prompt, der reine Schema-Ausgaben erzwingt.
 
 ## KI-Assistent
 
@@ -52,14 +76,20 @@ Jedes Projekt kann als JSON-Datei in einem Repository liegen — versioniert,
 reviewbar, zwischen Geräten teilbar. Die App spricht die GitHub-REST-API direkt
 aus dem Browser an: kein Server, kein Proxy.
 
-**Einrichten** unter *Einstellungen → GitHub-Synchronisation*:
+**Das Zielrepository ist frei wählbar und gehört nicht in das Repository der
+App.** Die Einstellungen legen nur ein Standard-Repository fest; jedes Projekt
+kann im Sync-Dialog auf ein anderes Repository, einen anderen Branch oder einen
+anderen Pfad zeigen. Trägt man versehentlich das Repository ein, aus dem die App
+ausgeliefert wird, weist die Oberfläche darauf hin.
+
+**Einrichten** unter *Einstellungen → Daten-Repository (GitHub)*:
 
 1. Feingranularen Token auf github.com unter *Settings → Developer settings →
-   Personal access tokens → Fine-grained tokens* anlegen, auf genau dieses
-   Repository beschränken, Berechtigung **Contents: read and write**
+   Personal access tokens → Fine-grained tokens* anlegen, auf das gewünschte
+   Datenrepository beschränken, Berechtigung **Contents: read and write**
    (für Pull Requests zusätzlich **Pull requests: write**).
-2. Owner und Repository eintragen — auf einer `*.github.io`-Adresse füllt
-   „Aus Adresse übernehmen" beides vor.
+2. Standard-Repository als `owner/name` eintragen — „Meine laden" holt die
+   Repositories mit Schreibzugriff als Vorschlagsliste.
 3. Optional Branch und Verzeichnis (Standard: `umllight`), Commit-Autor,
    sowie für GitHub Enterprise eine eigene API-Basis.
 4. „Repository prüfen" bestätigt Zugriff, Standard-Branch und Schreibrecht und
@@ -71,7 +101,7 @@ der Dialog den Zustand:
 
 | Status | Bedeutung | Angebotene Aktionen |
 | --- | --- | --- |
-| nicht verknüpft | nur lokal vorhanden | Verknüpfen & pushen |
+| nicht verknüpft | nur lokal vorhanden | Ziel wählen, verknüpfen & pushen |
 | synchron | identisch mit dem Branch | — |
 | lokal geändert | seit dem letzten Sync bearbeitet | Commit & Push, Pull Request |
 | entfernt geändert | jemand hat im Repository committet | Pull |
@@ -83,12 +113,15 @@ Inhalts-Hash — es wird nie stillschweigend gemergt, die Entscheidung liegt imm
 beim Nutzer. Commits entstehen über die Git-Data-API (Blob → Tree → Commit →
 Ref), also als **ein** Commit pro Push mit sauberer Historie.
 
+Über **Ziel ändern** lässt sich ein bereits verknüpftes Projekt jederzeit in ein
+anderes Repository umziehen; der nächste Push legt die Datei dort an.
+
 Weiter im Dialog: **Verlauf** listet die Commits der Datei, jede Version lässt
 sich auf GitHub öffnen oder lokal wiederherstellen (landet erst mit dem nächsten
 Push im Repository). **Als Pull Request** committet auf einen frischen Branch
 `umllight/<projekt>-<zeitstempel>` und öffnet den PR gegen den verfolgten Branch.
-In der Projektliste holt **Aus Repository** Projekte, die dort liegen, aber
-lokal fehlen.
+In der Projektliste holt **Aus Repository** Projekte, die dort liegen, aber lokal
+fehlen — auch dort sind Repository, Branch und Verzeichnis frei einstellbar.
 
 Der Token wird nur als `Authorization`-Header an die konfigurierte API-Basis
 geschickt und wahlweise dauerhaft oder nur für die aktuelle Sitzung gespeichert.
@@ -149,13 +182,14 @@ js/store.js           localStorage-Persistenz, Import/Export
 js/plantuml.js        PlantUML-Kodierung (deflate + Base64, Hex-Fallback)
 js/diagram.js         Diagramm-Panel (rendern, zoomen, Quelle, Download, Überschreiben)
 js/generators.js      Modell → PlantUML
+js/schemas.js         Datenmodell → OpenAPI 3.1 und Avro (inkl. YAML-Ausgabe)
 js/export.js          Markdown-Export inkl. Optionsdialog
 js/ai.js              Hugging-Face-Client (Streaming, PlantUML-Extraktion)
 js/aipanel.js         KI-Dialog je Diagramm
 js/github.js          GitHub-REST-Client (Git-Data-API, atomare Commits)
 js/gitsync.js         Sync-Logik: Status, Push, Pull, PR, Verlauf, Import
 js/gitpanel.js        Sync- und Import-Dialog
-js/views/*.js         Die sechs Bereiche der Anwendung
+js/views/*.js         Die sieben Bereiche der Anwendung
 sw.js                 Service Worker (App-Shell offline, Diagramm-Cache)
 ```
 

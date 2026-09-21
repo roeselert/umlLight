@@ -10,6 +10,15 @@ export const DEFAULT_SERVER = 'https://www.plantuml.com/plantuml';
 export const DEFAULT_GIT_API = 'https://api.github.com';
 export const DEFAULT_AI_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 export const DEFAULT_AI_MODEL = 'Qwen/Qwen2.5-Coder-32B-Instruct';
+export const DEFAULT_SCHEMA_PROMPT = `Du bist ein Assistent für API- und Datenschemata und gibst ausschließlich das angeforderte Artefakt zurück.
+
+Regeln:
+- Antworte mit genau einem Codeblock (\`\`\`yaml oder \`\`\`json) und ohne Fließtext davor oder danach.
+- OpenAPI: gültige Spezifikation nach 3.1.0, inklusive info, servers, paths und components.
+- Avro: gültiges Avro-Schema als JSON (Record oder Array von Records) mit namespace und name.
+- Wenn eine bestehende Fassung mitgeliefert wird: deren Struktur, Namen und IDs beibehalten und nur das Verlangte ändern.
+- Keine Platzhalter wie "..." und keine externen $ref-Verweise auf andere Dateien.`;
+
 export const DEFAULT_SYSTEM_PROMPT = `Du bist ein Assistent für UML-Modellierung und gibst ausschließlich PlantUML-Code zurück.
 
 Regeln:
@@ -38,15 +47,18 @@ export function emptyProject(name = 'Neues Projekt') {
     summary: '',
     createdAt: now,
     updatedAt: now,
-    vision: {
-      forWhom: '', who: '', problem: '', productName: '', category: '',
-      keyBenefit: '', alternative: '', differentiator: '',
-      statement: '', goals: [], nonGoals: [], constraints: '',
-    },
+    vision: { goals: [], nonGoals: [], constraints: '' },
     useCases: { actors: [], useCases: [], systemName: '', custom: null },
     deployment: { mode: 'model', text: '', nodes: [], links: [], custom: null },
     dataModel: { entities: [], relations: [], custom: null },
     viewModel: { views: [], links: [], activities: [], custom: null },
+    schemas: {
+      openapi: {
+        custom: null, title: '', version: '1.0.0', server: '',
+        includeCrud: true, includeRefs: true, auth: 'none', format: 'yaml', pathStyle: 'plural',
+      },
+      avro: { custom: null, namespace: '', includeRefs: true },
+    },
   };
 }
 
@@ -60,6 +72,10 @@ function normalizeProject(p) {
     deployment: { ...base.deployment, ...(p.deployment || {}) },
     dataModel: { ...base.dataModel, ...(p.dataModel || {}) },
     viewModel: { ...base.viewModel, ...(p.viewModel || {}) },
+    schemas: {
+      openapi: { ...base.schemas.openapi, ...((p.schemas || {}).openapi || {}) },
+      avro: { ...base.schemas.avro, ...((p.schemas || {}).avro || {}) },
+    },
   };
   merged.id = p.id || base.id;
   for (const arr of ['goals', 'nonGoals']) if (!Array.isArray(merged.vision[arr])) merged.vision[arr] = [];
@@ -217,6 +233,7 @@ const defaultSettings = {
   aiTemperature: 0.2,
   aiMaxTokens: 1200,
   aiSendContext: true,
+  aiSchemaSystemPrompt: DEFAULT_SCHEMA_PROMPT,
   // --- GitHub synchronisation
   gitEnabled: true,
   gitApiBase: DEFAULT_GIT_API,

@@ -1,5 +1,5 @@
-// Per-project synchronisation dialog: status, push/pull, conflict resolution,
-// pull requests and commit history.
+// Per-project synchronisation dialog: target repository, status, push/pull,
+// conflict resolution, pull requests and commit history.
 
 import { h, clear, modal, toast, confirmDialog, field, textInput } from './ui.js';
 import * as gh from './github.js';
@@ -23,35 +23,139 @@ export function statusChip(status) {
   return h('span', { class: `chip ${CHIP_CLASS[status] ?? ''}` }, sync.STATUS_LABEL[status] || status);
 }
 
+function setupScreen(close, what = 'Die Synchronisation') {
+  return h('div', {},
+    h('h2', {}, 'Daten-Repository einrichten'),
+    h('p', { class: 'hint' },
+      `${what} braucht ein Repository und einen feingranularen Zugriffstoken (Berechtigung „Contents: read and write", für Pull Requests zusätzlich „Pull requests: write"). Am besten ein eigenes Repository für Spezifikationen — nicht das, in dem die App liegt.`),
+    h('div', { class: 'modal-actions' },
+      h('button', { class: 'btn ghost', onclick: () => close() }, 'Später'),
+      h('button', {
+        class: 'btn primary',
+        onclick: () => { close(); document.dispatchEvent(new CustomEvent('umllight:settings', { detail: { focus: 'git' } })); },
+      }, 'Einstellungen öffnen')));
+}
+
+/** Repository / branch / path editor, used for linking and for re-targeting. */
+function targetEditor(initial, { onRepoWarning } = {}) {
+  const value = {
+    repoFull: initial.owner && initial.repo ? `${initial.owner}/${initial.repo}` : '',
+    branch: initial.branch || '',
+    path: initial.path || '',
+  };
+  const repoList = h('datalist', { id: 'git-repo-list' });
+  const warn = h('div', { class: 'hint', style: { margin: '2px 0 10px' } });
+
+  const checkSelf = () => {
+    const { owner, repo } = gh.parseRepoFull(value.repoFull);
+    if (owner && repo && gh.isSelfRepo({ owner, repo })) {
+      warn.style.color = 'var(--warn)';
+      warn.textContent = 'Das ist das Repository der App selbst. Für Spezifikationen besser ein eigenes Datenrepository wählen.';
+      if (onRepoWarning) onRepoWarning(true);
+    } else {
+      warn.textContent = '';
+      if (onRepoWarning) onRepoWarning(false);
+    }
+  };
+
+  const repoInput = h('input', {
+    type: 'text', value: value.repoFull, list: 'git-repo-list', spellcheck: 'false',
+    placeholder: 'owner/repository',
+    oninput: (e) => { value.repoFull = e.target.value; checkSelf(); },
+  });
+
+  const loadRepos = async (btn) => {
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = 'Lade …';
+    try {
+      const repos = await gh.listMyRepos();
+      clear(repoList);
+      repos.filter((r) => r.push).forEach((r) => repoList.appendChild(h('option', { value: r.full })));
+      btn.textContent = `${repos.length} gefunden`;
+    } catch (err) {
+      toast(err.message, 'err');
+      btn.textContent = prev;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  const branchInput = h('input', {
+    type: 'text', value: value.branch, placeholder: 'Standard-Branch', spellcheck: 'false',
+  });
+  const pathInput = h('input', {
+    type: 'text', value: value.path, placeholder: 'umllight/projekt.json', spellcheck: 'false',
+  });
+
+  const el = h('div', {},
+    field('Repository', h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
+      repoInput, repoList,
+      h('button', { class: 'btn small', onclick: (e) => loadRepos(e.target) }, 'Laden'))),
+    warn,
+    h('div', { class: 'grid-2' },
+      field('Branch', branchInput),
+      field('Pfad', pathInput)));
+  checkSelf();
+
+  // Read straight from the DOM so a value never depends on an input event
+  // having fired (datalist picks, autofill, programmatic changes).
+  el.read = () => {
+    const { owner, repo } = gh.parseRepoFull(repoInput.value);
+    return { owner, repo, branch: branchInput.value.trim(), path: pathInput.value.trim() };
+  };
+  return el;
+}
+
 /**
  * @param {object} project
  * @param {() => void} [onChanged] called after the local project was replaced
  */
 export function openGitDialog(project, onChanged) {
   return modal((close) => {
-    if (!gh.isConfigured()) {
-      return h('div', {},
-        h('h2', {}, 'GitHub einrichten'),
-        h('p', { class: 'hint' },
-          'Für die Synchronisation werden ein Repository und ein feingranularer Zugriffstoken benötigt (Berechtigung „Contents: read and write", für Pull Requests zusätzlich „Pull requests: write").'),
-        h('div', { class: 'modal-actions' },
-          h('button', { class: 'btn ghost', onclick: () => close() }, 'Später'),
-          h('button', {
-            class: 'btn primary',
-            onclick: () => { close(); document.dispatchEvent(new CustomEvent('umllight:settings', { detail: { focus: 'git' } })); },
-          }, 'Einstellungen öffnen')));
-    }
+    const initialTarget = sync.targetFor(project);
+    if (!gh.isConfigured(initialTarget)) return setupScreen(close);
 
-    const cfg = gh.config();
-    const head = h('div', { class: 'row', style: { marginBottom: '10px' } });
     const statusBox = h('div', { class: 'card', style: { marginBottom: '12px' } }, h('div', { class: 'spinner' }));
     const actions = h('div', { class: 'btn-row', style: { marginBottom: '8px' } });
     const historyBox = h('div', {});
     const log = h('div', { class: 'hint', style: { margin: '8px 0 0' } });
+    const targetBox = h('div', {});
 
     let current = null;
-    let pathValue = sync.linkOf(project)?.path || sync.defaultPath(project);
+    let editor = null;
     let message = '';
+
+    const showEditor = (linked) => {
+      clear(targetBox);
+      const state = sync.linkOf(project);
+      const target = sync.targetFor(project);
+      editor = targetEditor({
+        owner: target.owner,
+        repo: target.repo,
+        branch: state?.branch || target.branch || '',
+        path: state?.path || sync.defaultPath(project, target),
+      });
+      targetBox.appendChild(h('h3', {}, linked ? 'Ziel ändern' : 'Ziel'));
+      targetBox.appendChild(editor);
+      if (linked) {
+        targetBox.appendChild(h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
+          h('button', {
+            class: 'btn small',
+            onclick: async () => {
+              const t = editor.read();
+              if (!t.owner || !t.repo) { toast('Repository als owner/name angeben', 'err'); return; }
+              await sync.retarget(project, t);
+              editor = null;
+              clear(targetBox);
+              log.textContent = 'Ziel geändert — der nächste Push legt die Datei dort an.';
+              if (onChanged) onChanged();
+              refresh(true);
+            },
+          }, 'Übernehmen'),
+          h('button', { class: 'btn small ghost', onclick: () => { editor = null; clear(targetBox); renderStatus(); } }, 'Abbrechen')));
+      }
+    };
 
     const setBusy = (text) => {
       log.style.color = '';
@@ -63,13 +167,9 @@ export function openGitDialog(project, onChanged) {
       log.textContent = err.message || String(err);
       [...actions.querySelectorAll('button')].forEach((b) => { b.disabled = false; });
     };
-
     const act = (label, fn, cls = 'btn') => h('button', {
       class: cls,
-      onclick: async () => {
-        setBusy('Arbeite …');
-        try { await fn(); } catch (err) { fail(err); }
-      },
+      onclick: async () => { setBusy('Arbeite …'); try { await fn(); } catch (err) { fail(err); } },
     }, label);
 
     async function refresh(networked = true) {
@@ -90,15 +190,15 @@ export function openGitDialog(project, onChanged) {
 
     function renderStatus() {
       const st = current.state;
-      pathField.hidden = !!st;
+      const target = sync.targetFor(project);
       clear(statusBox);
       statusBox.appendChild(h('div', { class: 'row', style: { marginBottom: '8px' } },
         h('strong', { style: { flex: '1 1 auto' } }, project.name),
         statusChip(current.status)));
       statusBox.appendChild(h('div', { class: 'hint', style: { margin: 0 } },
         st
-          ? `${st.repo || gh.repoKey()} · ${st.branch || cfg.branch || 'Standard-Branch'} · ${st.path}`
-          : `${gh.repoKey()} · noch nicht verknüpft`));
+          ? `${gh.targetLabel(target)} · ${st.branch || 'Standard-Branch'} · ${st.path}`
+          : `Ziel: ${gh.targetLabel(target)}${target.path ? ` · ${target.path}/` : ''}`));
       if (st?.syncedAt) {
         statusBox.appendChild(h('div', { class: 'hint', style: { margin: '4px 0 0' } },
           `Zuletzt synchronisiert: ${fmtDate(st.syncedAt)}`));
@@ -107,6 +207,13 @@ export function openGitDialog(project, onChanged) {
         statusBox.appendChild(h('div', { class: 'hint', style: { margin: '4px 0 0' } },
           'Letzter Pull Request: ', h('a', { href: st.lastPr.url, target: '_blank', rel: 'noopener' }, `#${st.lastPr.number}`)));
       }
+      if (st && !editor) {
+        statusBox.appendChild(h('button', {
+          class: 'btn small ghost', style: { marginTop: '8px' },
+          onclick: () => showEditor(true),
+        }, 'Ziel ändern'));
+      }
+      if (!st && !editor) showEditor(false);
     }
 
     const done = (text) => {
@@ -122,18 +229,22 @@ export function openGitDialog(project, onChanged) {
 
       if (s === sync.STATUS.UNLINKED) {
         actions.appendChild(act('Verknüpfen & pushen', async () => {
-          await sync.link(project, { path: pathValue.trim() || sync.defaultPath(project) });
+          const t = editor ? editor.read() : {};
+          if (!t.owner || !t.repo) throw new Error('Repository als owner/name angeben.');
+          await sync.link(project, t);
           try {
             await sync.push(project, { message: message.trim() || undefined });
           } catch (err) {
             if (err.code === 'exists') {
               const useRemote = await confirmDialog('Datei existiert bereits',
-                `Unter „${pathValue}" liegt bereits eine Datei. Deren Inhalt laden (lokale Fassung wird ersetzt)?`, 'Laden');
-              if (useRemote) { await sync.pull(project); done('Vom Repository geladen.'); return; }
+                `Unter „${sync.linkOf(project).path}" liegt bereits eine Datei. Deren Inhalt laden (lokale Fassung wird ersetzt)?`, 'Laden');
+              if (useRemote) { await sync.pull(project); clear(targetBox); editor = null; done('Vom Repository geladen.'); return; }
               throw new Error('Push abgebrochen — anderen Pfad wählen oder Datei laden.');
             }
             throw err;
           }
+          clear(targetBox);
+          editor = null;
           done('Projekt wurde committet und gepusht.');
         }, 'btn primary'));
       }
@@ -170,7 +281,6 @@ export function openGitDialog(project, onChanged) {
       if (s !== sync.STATUS.UNLINKED && s !== sync.STATUS.SYNCED) {
         actions.appendChild(act('Als Pull Request', async () => {
           const { pr } = await sync.pushAsPullRequest(project, { message: message.trim() || undefined });
-          log.textContent = '';
           done(`Pull Request #${pr.number} erstellt.`);
           window.open(pr.html_url, '_blank', 'noopener');
         }));
@@ -188,6 +298,7 @@ export function openGitDialog(project, onChanged) {
             if (!(await confirmDialog('Verknüpfung lösen?',
               'Das Projekt bleibt lokal und im Repository erhalten, wird aber nicht mehr synchronisiert.', 'Lösen'))) return;
             sync.unlink(project);
+            editor = null;
             if (onChanged) onChanged();
             refresh(false);
           },
@@ -234,18 +345,12 @@ export function openGitDialog(project, onChanged) {
       }
     }
 
-    const pathField = field('Pfad im Repository',
-      textInput(pathValue, (val) => { pathValue = val; }, { spellcheck: 'false' }),
-      'Wird beim ersten Push angelegt.');
-    pathField.hidden = !!sync.linkOf(project);
-
     const body = h('div', {},
       h('h2', {}, 'Repository-Synchronisation'),
-      head,
       statusBox,
+      targetBox,
       field('Commit-Nachricht (optional)',
         textInput('', (val) => { message = val; }, { placeholder: sync.commitMessage(project) })),
-      pathField,
       actions,
       log,
       h('div', { class: 'card', style: { marginTop: '14px' } },
@@ -261,18 +366,24 @@ export function openGitDialog(project, onChanged) {
   });
 }
 
-/** Import dialog for project files that exist in the repository but not locally. */
+/** Import dialog for project files that exist in a repository but not locally. */
 export function openImportDialog(onImported) {
   return modal((close) => {
-    const list = h('div', {}, h('div', { class: 'spinner' }));
-    const log = h('div', { class: 'hint', style: { margin: '8px 0 0' } });
+    if (!gh.isConfigured()) return setupScreen(close, 'Der Import');
 
-    (async () => {
+    const list = h('div', {});
+    const log = h('div', { class: 'hint', style: { margin: '8px 0 0' } });
+    const editor = targetEditor(gh.defaultTarget());
+
+    async function load() {
+      clear(list);
+      list.appendChild(h('div', { class: 'spinner' }));
+      const t = editor.read();
       try {
-        const entries = await sync.listRemoteProjects();
+        const entries = await sync.listRemoteProjects({ owner: t.owner, repo: t.repo, branch: t.branch, path: t.path });
         clear(list);
         if (!entries.length) {
-          list.appendChild(h('div', { class: 'empty' }, 'Keine Projektdateien im konfigurierten Verzeichnis gefunden.'));
+          list.appendChild(h('div', { class: 'empty' }, 'Keine Projektdateien in diesem Verzeichnis gefunden.'));
           return;
         }
         for (const e of entries) {
@@ -302,11 +413,14 @@ export function openImportDialog(onImported) {
         clear(list);
         list.appendChild(h('div', { class: 'hint', style: { color: 'var(--danger)' } }, err.message));
       }
-    })();
+    }
 
+    load();
     return h('div', {},
       h('h2', {}, 'Aus Repository importieren'),
-      h('p', { class: 'hint' }, `${gh.repoKey()} · ${gh.config().path || 'Wurzelverzeichnis'}`),
+      editor,
+      h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
+        h('button', { class: 'btn small', onclick: load }, 'Verzeichnis laden')),
       list,
       log,
       h('div', { class: 'modal-actions' },

@@ -3,7 +3,7 @@
 // configurable in the settings; the token never leaves the browser except as
 // the Authorization header of the configured endpoint.
 
-import { getSettings, DEFAULT_SYSTEM_PROMPT } from './store.js';
+import { getSettings, DEFAULT_SYSTEM_PROMPT, DEFAULT_SCHEMA_PROMPT } from './store.js';
 
 export const isConfigured = () => {
   const s = getSettings();
@@ -11,6 +11,7 @@ export const isConfigured = () => {
 };
 
 export const systemPrompt = () => (getSettings().aiSystemPrompt || DEFAULT_SYSTEM_PROMPT);
+export const schemaPrompt = () => (getSettings().aiSchemaSystemPrompt || DEFAULT_SCHEMA_PROMPT);
 
 function friendlyError(status, body) {
   const detail = String(body || '').slice(0, 300);
@@ -99,13 +100,20 @@ export function extractPlantUml(text) {
   return any ? any[0].trim() : null;
 }
 
+/** Pull a fenced code block (or the raw text) out of a model answer. */
+export function extractCode(text) {
+  const raw = String(text || '');
+  const fenced = raw.match(/```[a-z0-9+-]*\s*\n([\s\S]*?)```/i);
+  const body = (fenced ? fenced[1] : raw).trim();
+  return body || null;
+}
+
 /** Compact, token-friendly description of the project for grounding. */
 export function projectContext(project, section) {
   if (!project) return '';
   const L = [`Projekt: ${project.name}`];
   if (project.summary) L.push(`Kurzbeschreibung: ${project.summary}`);
   const v = project.vision || {};
-  if (v.statement) L.push(`Vision: ${v.statement}`);
   const goals = (v.goals || []).filter(Boolean);
   if (goals.length) L.push(`Ziele: ${goals.join('; ')}`);
 
@@ -132,15 +140,15 @@ export function projectContext(project, section) {
   return L.join('\n');
 }
 
-/** Build the message list for a diagram request. */
-export function buildMessages({ instruction, currentSource, context, diagramTitle }) {
+/** Build the message list for a diagram or schema request. */
+export function buildMessages({ instruction, currentSource, context, diagramTitle, system, sourceLabel }) {
   const parts = [];
   if (context) parts.push(`Kontext des Projekts:\n${context}`);
-  if (diagramTitle) parts.push(`Diagrammtyp: ${diagramTitle}`);
-  if (currentSource) parts.push(`Aktuelle PlantUML-Quelle:\n${currentSource}`);
+  if (diagramTitle) parts.push(`Artefakt: ${diagramTitle}`);
+  if (currentSource) parts.push(`${sourceLabel || 'Aktuelle PlantUML-Quelle'}:\n${currentSource}`);
   parts.push(`Aufgabe:\n${instruction}`);
   return [
-    { role: 'system', content: systemPrompt() },
+    { role: 'system', content: system || systemPrompt() },
     { role: 'user', content: parts.join('\n\n') },
   ];
 }

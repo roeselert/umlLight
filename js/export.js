@@ -7,6 +7,7 @@ import { diagramUrl } from './plantuml.js';
 import {
   useCaseUml, useCaseScenarioUml, deploymentUml, dataModelUml, viewModelUml, ACTIVITY_TEMPLATE,
 } from './generators.js';
+import { openApiText, avroText } from './schemas.js';
 
 const clean = (s) => String(s ?? '').trim();
 const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
@@ -15,7 +16,7 @@ const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
 const anchor = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s/g, '-');
 
 export const DEFAULT_OPTIONS = {
-  vision: true, usecases: true, deployment: true, datamodel: true, viewmodel: true,
+  vision: true, usecases: true, deployment: true, datamodel: true, viewmodel: true, schemas: true,
   source: true, images: false, toc: true, scenarios: true,
 };
 
@@ -53,17 +54,6 @@ export async function buildMarkdown(p, options = {}) {
   if (opts.vision) {
     const v = p.vision || {};
     section(++n, 'Produktvision');
-    if (clean(v.statement)) push(`> ${clean(v.statement).replace(/\n/g, '\n> ')}`, '');
-    const rows = [
-      ['Zielgruppe', v.forWhom], ['Bedarf/Situation', v.who], ['Problem', v.problem],
-      ['Produkt', v.productName], ['Kategorie', v.category], ['Hauptnutzen', v.keyBenefit],
-      ['Alternative', v.alternative], ['Alleinstellung', v.differentiator],
-    ].filter(([, val]) => clean(val));
-    if (rows.length) {
-      push('| Aspekt | Inhalt |', '| --- | --- |');
-      for (const [k, val] of rows) push(`| ${k} | ${clean(val).replace(/\n/g, ' ')} |`);
-      push('');
-    }
     const goals = (v.goals || []).filter(clean);
     if (goals.length) { push('**Ziele**', ''); goals.forEach((g) => push(`- ${g}`)); push(''); }
     const nonGoals = (v.nonGoals || []).filter(clean);
@@ -185,6 +175,15 @@ export async function buildMarkdown(p, options = {}) {
     }
   }
 
+  if (opts.schemas && (p.dataModel.entities || []).length) {
+    section(++n, 'API & Schemas');
+    const sc = p.schemas || {};
+    const openapi = sc.openapi?.custom ?? openApiText(p, sc.openapi || {});
+    const avro = sc.avro?.custom ?? avroText(p, sc.avro || {});
+    push('### OpenAPI', '', `\`\`\`${(sc.openapi?.format || 'yaml') === 'json' ? 'json' : 'yaml'}`, openapi, '```', '');
+    push('### Avro', '', '```json', avro, '```', '');
+  }
+
   if (opts.toc && heads.length > 1) {
     const toc = ['**Inhalt**', '', ...heads.map((t) => `- [${t}](#${anchor(t)})`), ''];
     L.splice(tocIndex, 0, ...toc);
@@ -246,6 +245,7 @@ export function openExportDialog(projectOrList) {
       toggle('deployment', 'Deployment'),
       toggle('datamodel', 'Datenmodell'),
       toggle('viewmodel', 'View-Modell & Abläufe'),
+      toggle('schemas', 'API & Schemas'),
       h('h3', { style: { marginTop: '14px' } }, 'Optionen'),
       toggle('toc', 'Inhaltsverzeichnis'),
       toggle('source', 'PlantUML-Quelltext einbetten'),

@@ -9,6 +9,7 @@ import { renderUseCases } from './views/usecases.js';
 import { renderDeployment } from './views/deployment.js';
 import { renderDataModel } from './views/datamodel.js';
 import { renderViewModel } from './views/viewmodel.js';
+import { renderSchemas } from './views/schemas.js';
 
 const SECTIONS = [
   ['overview', 'Übersicht', '◎', 'Übersicht'],
@@ -17,6 +18,7 @@ const SECTIONS = [
   ['deployment', 'Deployment', '▤', 'Deploy'],
   ['datamodel', 'Datenmodell', '▦', 'Daten'],
   ['viewmodel', 'Views & Abläufe', '▣', 'Views'],
+  ['schemas', 'API & Schemas', '❖', 'API'],
 ];
 
 const RENDERERS = {
@@ -26,6 +28,7 @@ const RENDERERS = {
   deployment: renderDeployment,
   datamodel: renderDataModel,
   viewmodel: renderViewModel,
+  schemas: renderSchemas,
 };
 
 const main = document.getElementById('main');
@@ -264,14 +267,26 @@ function openSettings(focus) {
       testOut);
 
 
-    // ---- GitHub
+    // ---- GitHub data repository
     const gitTokenInput = h('input', {
       type: 'password', value: store.getGitToken(), placeholder: 'github_pat_… / ghp_…',
       autocomplete: 'off', spellcheck: 'false',
       oninput: (e) => store.setGitToken(e.target.value.trim(), store.getSettings().gitTokenScope),
     });
-    const ownerInput = textInput(s.gitOwner, (val) => set({ gitOwner: val.trim() }), { placeholder: 'benutzer-oder-organisation', spellcheck: 'false' });
-    const repoInput = textInput(s.gitRepo, (val) => set({ gitRepo: val.trim() }), { placeholder: 'repository', spellcheck: 'false' });
+    const repoFullInput = h('input', {
+      type: 'text', list: 'git-repos', spellcheck: 'false', placeholder: 'owner/repository',
+      value: s.gitOwner && s.gitRepo ? `${s.gitOwner}/${s.gitRepo}` : '',
+      oninput: async (e) => {
+        const { parseRepoFull, isSelfRepo } = await import('./github.js');
+        const { owner, repo } = parseRepoFull(e.target.value);
+        set({ gitOwner: owner, gitRepo: repo });
+        selfWarn.textContent = owner && repo && isSelfRepo({ owner, repo })
+          ? 'Das ist das Repository, aus dem die App ausgeliefert wird. Für Spezifikationen besser ein eigenes Datenrepository verwenden.'
+          : '';
+      },
+    });
+    const repoList = h('datalist', { id: 'git-repos' });
+    const selfWarn = h('div', { class: 'hint', style: { margin: '2px 0 10px', color: 'var(--warn)' } });
     const branchInput = h('input', {
       type: 'text', value: s.gitBranch || '', list: 'git-branches', placeholder: 'leer = Standard-Branch', spellcheck: 'false',
       oninput: (e) => set({ gitBranch: e.target.value.trim() }),
@@ -279,16 +294,22 @@ function openSettings(focus) {
     const branchList = h('datalist', { id: 'git-branches' });
     const gitOut = h('div', { class: 'hint', style: { margin: '6px 0 0' } });
 
-    const prefillFromUrl = () => {
-      const host = location.hostname;
-      const seg = location.pathname.split('/').filter(Boolean);
-      if (!host.endsWith('.github.io')) { gitOut.textContent = 'Nur auf github.io-Adressen möglich.'; return; }
-      const owner = host.split('.')[0];
-      const repo = seg[0] || `${owner}.github.io`;
-      ownerInput.value = owner;
-      repoInput.value = repo;
-      set({ gitOwner: owner, gitRepo: repo });
-      gitOut.textContent = `Übernommen: ${owner}/${repo}`;
+    const loadRepos = async (btn) => {
+      btn.disabled = true;
+      gitOut.style.color = '';
+      gitOut.textContent = 'Lade Repositories …';
+      try {
+        const gh = await import('./github.js');
+        const repos = await gh.listMyRepos();
+        clear(repoList);
+        repos.filter((r) => r.push).forEach((r) => repoList.appendChild(h('option', { value: r.full })));
+        gitOut.textContent = `${repos.length} Repositories mit Schreibzugriff — im Feld „Repository" auswählen.`;
+      } catch (err) {
+        gitOut.style.color = 'var(--danger)';
+        gitOut.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
     };
 
     const checkRepo = async (btn) => {
@@ -297,8 +318,9 @@ function openSettings(focus) {
       gitOut.textContent = 'Prüfe Repository …';
       try {
         const gh = await import('./github.js');
-        const repo = await gh.getRepo();
-        const branches = await gh.listBranches();
+        const target = gh.defaultTarget();
+        const repo = await gh.getRepo(target);
+        const branches = await gh.listBranches(target);
         clear(branchList);
         branches.forEach((b) => branchList.appendChild(h('option', { value: b })));
         const perms = repo.permissions || {};
@@ -313,9 +335,9 @@ function openSettings(focus) {
     };
 
     const gitCard = h('div', { class: 'card', id: 'gitSettings' },
-      h('h3', {}, 'GitHub-Synchronisation'),
+      h('h3', {}, 'Daten-Repository (GitHub)'),
       h('p', { class: 'hint' },
-        'Speichert je Projekt eine JSON-Datei im Repository und holt Änderungen wieder zurück. Benötigt einen feingranularen Token mit „Contents: read and write" (für Pull Requests zusätzlich „Pull requests: write").'),
+        'Legt je Projekt eine JSON-Datei in einem Repository deiner Wahl ab und holt Änderungen wieder zurück. Das kann ein beliebiges Repository sein — die Dateien gehören nicht in das Repository der App. Je Projekt lässt sich im Sync-Dialog ein abweichendes Ziel einstellen. Benötigt einen feingranularen Token mit „Contents: read and write" (für Pull Requests zusätzlich „Pull requests: write").'),
       h('label', { class: 'row', style: { marginBottom: '12px', gap: '8px' } },
         h('input', {
           type: 'checkbox', checked: s.gitEnabled !== false, style: { width: 'auto' },
@@ -334,22 +356,21 @@ function openSettings(focus) {
       field('Token speichern', select(s.gitTokenScope || 'local',
         [['local', 'dauerhaft in diesem Browser'], ['session', 'nur für diese Sitzung']],
         (val) => { set({ gitTokenScope: val }); store.setGitToken(gitTokenInput.value.trim(), val); })),
-      h('div', { class: 'grid-2' },
-        field('Owner', ownerInput),
-        field('Repository', repoInput)),
+      field('Standard-Repository', h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
+        repoFullInput, repoList,
+        h('button', { class: 'btn small', onclick: (e) => loadRepos(e.target) }, 'Meine laden'))),
+      selfWarn,
       h('div', { class: 'grid-2' },
         field('Branch', h('div', {}, branchInput, branchList), 'Nach „Repository prüfen" als Vorschlagsliste verfügbar.'),
         field('Verzeichnis', textInput(s.gitPath, (val) => set({ gitPath: val.trim() }), { placeholder: 'umllight', spellcheck: 'false' }))),
       h('div', { class: 'grid-2' },
         field('Commit-Autor (optional)', textInput(s.gitAuthorName, (val) => set({ gitAuthorName: val.trim() }))),
-        field('E-Mail (optional)', textInput(s.gitAuthorEmail, (val) => set({ gitAuthorEmail: val.trim() }))))
-      ,
+        field('E-Mail (optional)', textInput(s.gitAuthorEmail, (val) => set({ gitAuthorEmail: val.trim() })))),
       field('API-Basis', textInput(s.gitApiBase, (val) => set({ gitApiBase: val.trim() }),
         { placeholder: store.DEFAULT_GIT_API, spellcheck: 'false' }),
         'Für GitHub Enterprise, z. B. https://github.firma.de/api/v3'),
       h('div', { class: 'btn-row' },
-        h('button', { class: 'btn small', onclick: (e) => checkRepo(e.target) }, 'Repository prüfen'),
-        h('button', { class: 'btn small ghost', onclick: prefillFromUrl }, 'Aus Adresse übernehmen')),
+        h('button', { class: 'btn small', onclick: (e) => checkRepo(e.target) }, 'Repository prüfen')),
       gitOut);
 
     // ---- data

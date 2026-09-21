@@ -1,6 +1,7 @@
 // Project <-> repository synchronisation on top of the GitHub client.
-// One JSON file per project; conflicts are detected per project via the blob
-// sha we saw at the last sync, never merged silently.
+// One JSON file per project, in whichever repository the project points at —
+// the global settings only provide the default target. Conflicts are detected
+// per project via the blob sha seen at the last sync, never merged silently.
 
 import * as store from './store.js';
 import * as gh from './github.js';
@@ -24,9 +25,8 @@ export const STATUS_LABEL = {
 };
 
 export const slug = (name) => String(name || 'projekt')
-  .normalize('NFKD')
-  .replace(/[̀-ͯ]/g, '')
   .replace(/ä/gi, 'ae').replace(/ö/gi, 'oe').replace(/ü/gi, 'ue').replace(/ß/g, 'ss')
+  .normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .toLowerCase()
   .replace(/[^a-z0-9._-]+/g, '-')
   .replace(/^-+|-+$/g, '')
@@ -39,12 +39,28 @@ export async function fingerprint(project) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export const linkOf = (project) => store.getGitState(project.id);
+/** Stored link, with migration from the older { repo: "owner/name" } shape. */
+export function linkOf(project) {
+  const raw = store.getGitState(project.id);
+  if (!raw) return null;
+  if (!raw.owner && typeof raw.repo === 'string' && raw.repo.includes('/')) {
+    const { owner, repo } = gh.parseRepoFull(raw.repo);
+    return { ...raw, owner, repo };
+  }
+  return raw;
+}
 
-export function defaultPath(project) {
-  const c = gh.config();
+/** Repository coordinates for a project: its own link, else the defaults. */
+export function targetFor(project) {
+  const state = linkOf(project);
+  return gh.normalizeTarget(state
+    ? { owner: state.owner, repo: state.repo, branch: state.branch, api: state.api, path: state.path }
+    : {});
+}
+
+export function defaultPath(project, target = gh.defaultTarget()) {
   const file = `${slug(project.name)}.json`;
-  return c.path ? `${c.path}/${file}` : file;
+  return target.path ? `${target.path}/${file}` : file;
 }
 
 const fileContent = (project) => store.exportProject(project.id);
@@ -56,8 +72,8 @@ function parseProjectFile(text) {
   return p;
 }
 
-async function branchOf(state) {
-  return state?.branch || gh.config().branch || (await gh.defaultBranch());
+async function branchOf(target, state) {
+  return state?.branch || target.branch || (await gh.defaultBranch(target));
 }
 
 /** Local-only status — no network. */
@@ -76,36 +92,42 @@ export async function quickStatus(project) {
 export async function status(project) {
   const state = linkOf(project);
   if (!state) return { status: STATUS.UNLINKED, state: null };
+  const target = targetFor(project);
   const hash = await fingerprint(project);
   const localChanged = hash !== state.syncedHash;
-  const branch = await branchOf(state);
-  const remote = await gh.statFile(state.path, branch);
-  if (!remote) {
-    return { status: STATUS.REMOTE_MISSING, state, localChanged, remoteChanged: true };
-  }
+  const branch = await branchOf(target, state);
+  const remote = await gh.statFile(target, state.path, branch);
+  if (!remote) return { status: STATUS.REMOTE_MISSING, state, target, localChanged, remoteChanged: true };
   const remoteChanged = remote.sha !== state.blobSha;
   let s = STATUS.SYNCED;
   if (localChanged && remoteChanged) s = STATUS.DIVERGED;
   else if (localChanged) s = STATUS.LOCAL;
   else if (remoteChanged) s = STATUS.REMOTE;
-  return { status: s, state, localChanged, remoteChanged, remoteSha: remote.sha };
+  return { status: s, state, target, localChanged, remoteChanged, remoteSha: remote.sha };
 }
 
-/** Link a project to a repository path without transferring anything yet. */
-export async function link(project, { path, branch } = {}) {
-  const b = branch || gh.config().branch || (await gh.defaultBranch());
+/** Point a project at a repository/path without transferring anything yet. */
+export async function link(project, overrides = {}) {
+  const target = gh.normalizeTarget(overrides);
+  const branch = overrides.branch || target.branch || (await gh.defaultBranch(target));
   return store.setGitState(project.id, {
-    repo: gh.repoKey(),
-    branch: b,
-    path: path || defaultPath(project),
+    owner: target.owner,
+    repo: target.repo,
+    api: target.api,
+    branch,
+    path: overrides.path || defaultPath(project, target),
     blobSha: null,
     commitSha: null,
     syncedHash: null,
     syncedAt: null,
+    lastPr: null,
   });
 }
 
 export const unlink = (project) => store.clearGitState(project.id);
+
+/** Move a project to a different repository/branch/path (next push creates it). */
+export const retarget = (project, overrides) => link(project, overrides);
 
 export function commitMessage(project, verb = 'aktualisiert') {
   return `umlLight: ${project.name} ${verb}`;
@@ -118,39 +140,39 @@ export function commitMessage(project, verb = 'aktualisiert') {
 export async function push(project, opts = {}) {
   store.flush();
   let state = linkOf(project);
-  if (!state) state = await link(project);
-  const branch = await branchOf(state);
+  if (!state) state = await link(project, {});
+  const target = targetFor(project);
+  const branch = await branchOf(target, state);
   const path = state.path;
 
   if (!opts.force) {
-    const remote = await gh.statFile(path, branch);
-    const exists = !!remote;
-    if (exists && state.blobSha && remote.sha !== state.blobSha) {
+    const remote = await gh.statFile(target, path, branch);
+    if (remote && state.blobSha && remote.sha !== state.blobSha) {
       const err = new Error('Die Datei im Repository wurde seit der letzten Synchronisation geändert.');
       err.code = 'diverged';
       throw err;
     }
-    if (exists && !state.blobSha) {
+    if (remote && !state.blobSha) {
       const err = new Error('Unter diesem Pfad existiert bereits eine Datei im Repository.');
       err.code = 'exists';
       throw err;
     }
   }
 
-  const content = fileContent(project);
-  const { commit, blobs } = await gh.commitFiles({
+  const { commit, blobs } = await gh.commitFiles(target, {
     branch,
     message: opts.message || commitMessage(project, state.blobSha ? 'aktualisiert' : 'hinzugefügt'),
-    files: [{ path, content }],
+    files: [{ path, content: fileContent(project) }],
   });
-  const hash = await fingerprint(project);
   store.setGitState(project.id, {
-    repo: gh.repoKey(),
+    owner: target.owner,
+    repo: target.repo,
+    api: target.api,
     branch,
     path,
     blobSha: blobs[path],
     commitSha: commit.sha,
-    syncedHash: hash,
+    syncedHash: await fingerprint(project),
     syncedAt: new Date().toISOString(),
   });
   return commit;
@@ -159,18 +181,16 @@ export async function push(project, opts = {}) {
 /** Replace the local project with the version on the branch. */
 export async function pull(project) {
   const state = linkOf(project);
-  if (!state) throw new Error('Projekt ist nicht mit dem Repository verknüpft.');
-  const branch = await branchOf(state);
-  const file = await gh.getFile(state.path, branch);
+  if (!state) throw new Error('Projekt ist nicht mit einem Repository verknüpft.');
+  const target = targetFor(project);
+  const branch = await branchOf(target, state);
+  const file = await gh.getFile(target, state.path, branch);
   if (!file) throw new Error(`Datei nicht gefunden: ${state.path}`);
-  const incoming = parseProjectFile(file.text);
-  const updated = store.replaceProject(project.id, incoming);
-  const hash = await fingerprint(updated);
+  const updated = store.replaceProject(project.id, parseProjectFile(file.text));
   store.setGitState(project.id, {
-    repo: gh.repoKey(),
     branch,
     blobSha: file.sha,
-    syncedHash: hash,
+    syncedHash: await fingerprint(updated),
     syncedAt: new Date().toISOString(),
   });
   return updated;
@@ -180,18 +200,20 @@ export async function pull(project) {
 export async function pushAsPullRequest(project, opts = {}) {
   store.flush();
   let state = linkOf(project);
-  if (!state) state = await link(project);
-  const baseBranch = await branchOf(state);
+  if (!state) state = await link(project, {});
+  const target = targetFor(project);
+  const baseBranch = await branchOf(target, state);
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
   const newBranch = opts.branch || `umllight/${slug(project.name)}-${stamp}`;
   const message = opts.message || commitMessage(project);
-  const { commit } = await gh.commitOnNewBranch({
+  const { commit } = await gh.commitOnNewBranch(target, {
     baseBranch,
     newBranch,
     message,
     files: [{ path: state.path, content: fileContent(project) }],
   });
   const pr = await gh.createPullRequest(
+    target,
     newBranch,
     baseBranch,
     opts.title || message,
@@ -204,8 +226,9 @@ export async function pushAsPullRequest(project, opts = {}) {
 export async function history(project, limit = 20) {
   const state = linkOf(project);
   if (!state) return [];
-  const branch = await branchOf(state);
-  const commits = await gh.listCommits(state.path, branch, limit);
+  const target = targetFor(project);
+  const branch = await branchOf(target, state);
+  const commits = await gh.listCommits(target, state.path, branch, limit);
   return (commits || []).map((c) => ({
     sha: c.sha,
     message: (c.commit?.message || '').split('\n')[0],
@@ -218,39 +241,48 @@ export async function history(project, limit = 20) {
 /** Load the version from a commit into the local project (not pushed yet). */
 export async function restore(project, commitSha) {
   const state = linkOf(project);
-  if (!state) throw new Error('Projekt ist nicht mit dem Repository verknüpft.');
-  const text = await gh.getFileAtCommit(state.path, commitSha);
+  if (!state) throw new Error('Projekt ist nicht mit einem Repository verknüpft.');
+  const text = await gh.getFileAtCommit(targetFor(project), state.path, commitSha);
   if (!text) throw new Error('In diesem Commit existiert die Datei nicht.');
   const updated = store.replaceProject(project.id, parseProjectFile(text));
-  // The local copy now differs from the branch head on purpose.
-  store.setGitState(project.id, { syncedHash: null });
+  store.setGitState(project.id, { syncedHash: null }); // differs from the branch head on purpose
   return updated;
 }
 
-/** JSON files in the configured directory that are not linked locally yet. */
-export async function listRemoteProjects() {
-  const c = gh.config();
-  const branch = c.branch || (await gh.defaultBranch());
-  const entries = await gh.listDir(c.path, branch);
-  const linkedPaths = new Set(Object.values(store.allGitStates()).map((s) => s?.path).filter(Boolean));
+/** JSON files in a repository directory, flagged when already linked locally. */
+export async function listRemoteProjects(overrides = {}) {
+  const target = gh.normalizeTarget(overrides);
+  const branch = target.branch || (await gh.defaultBranch(target));
+  const entries = await gh.listDir(target, target.path, branch);
+  const linked = new Set(Object.values(store.allGitStates())
+    .filter(Boolean)
+    .map((s) => `${s.owner || ''}/${s.repo || ''}:${s.path}`));
   return entries
     .filter((e) => e.type === 'file' && e.name.endsWith('.json'))
-    .map((e) => ({ name: e.name.replace(/\.json$/, ''), path: e.path, sha: e.sha, linked: linkedPaths.has(e.path) }));
+    .map((e) => ({
+      name: e.name.replace(/\.json$/, ''),
+      path: e.path,
+      sha: e.sha,
+      target,
+      branch,
+      linked: linked.has(`${target.owner}/${target.repo}:${e.path}`),
+    }));
 }
 
 export async function importRemote(entry) {
-  const c = gh.config();
-  const branch = c.branch || (await gh.defaultBranch());
-  const file = await gh.getFile(entry.path, branch);
+  const target = entry.target || gh.defaultTarget();
+  const branch = entry.branch || target.branch || (await gh.defaultBranch(target));
+  const file = await gh.getFile(target, entry.path, branch);
   if (!file) throw new Error(`Datei nicht gefunden: ${entry.path}`);
   const added = store.addProject(parseProjectFile(file.text));
-  const hash = await fingerprint(added);
   store.setGitState(added.id, {
-    repo: gh.repoKey(),
+    owner: target.owner,
+    repo: target.repo,
+    api: target.api,
     branch,
     path: entry.path,
     blobSha: file.sha,
-    syncedHash: hash,
+    syncedHash: await fingerprint(added),
     syncedAt: new Date().toISOString(),
   });
   return added;

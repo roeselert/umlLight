@@ -3,7 +3,7 @@
 // source.
 
 import { h, clear, modal, toast, copyText } from './ui.js';
-import { complete, buildMessages, extractPlantUml, projectContext, isConfigured } from './ai.js';
+import { complete, buildMessages, extractPlantUml, extractCode, projectContext, isConfigured } from './ai.js';
 import { getSettings } from './store.js';
 
 const QUICK_PROMPTS = {
@@ -34,6 +34,21 @@ const QUICK_PROMPTS = {
   ],
 };
 
+export const SCHEMA_PROMPTS = {
+  openapi: [
+    'Erzeuge eine vollständige OpenAPI-Spezifikation aus dem Datenmodell.',
+    'Ergänze Filter-, Sortier- und Paginierungsparameter für die Listen-Endpunkte.',
+    'Ergänze Fehlerantworten, Beispiele und Beschreibungen.',
+  ],
+  avro: [
+    'Erzeuge Avro-Records aus dem Datenmodell.',
+    'Ergänze sinnvolle Standardwerte und logische Typen.',
+    'Prüfe das Schema auf Gültigkeit und korrigiere Fehler.',
+  ],
+};
+
+export { extractCode };
+
 /**
  * @param {object} cfg
  * @param {string} cfg.title          diagram title, shown to the model as type
@@ -62,6 +77,7 @@ export function openAiDialog(cfg) {
     }
 
     const settings = getSettings();
+    const extract = cfg.extract || extractPlantUml;
     let instruction = '';
     let withSource = !!cfg.currentSource;
     let withContext = settings.aiSendContext !== false;
@@ -78,8 +94,8 @@ export function openAiDialog(cfg) {
     const applyBtn = h('button', {
       class: 'btn primary', disabled: true,
       onclick: () => {
-        const uml = extractPlantUml(result);
-        if (!uml) { toast('Keine PlantUML-Quelle in der Antwort gefunden', 'err'); return; }
+        const uml = extract(result);
+        if (!uml) { toast(`Kein ${cfg.artefactLabel || 'PlantUML'}-Inhalt in der Antwort gefunden`, 'err'); return; }
         cfg.onApply(uml);
         close();
         toast('Diagramm übernommen');
@@ -88,7 +104,7 @@ export function openAiDialog(cfg) {
 
     const copyBtn = h('button', {
       class: 'btn', disabled: true,
-      onclick: () => copyText(extractPlantUml(result) || result),
+      onclick: () => copyText(extract(result) || result),
     }, 'Kopieren');
 
     const runBtn = h('button', { class: 'btn primary', onclick: () => run() }, 'Generieren');
@@ -96,7 +112,7 @@ export function openAiDialog(cfg) {
 
     function updateButtons() {
       runBtn.disabled = !instruction.trim();
-      const uml = result ? extractPlantUml(result) : null;
+      const uml = result ? extract(result) : null;
       applyBtn.disabled = !uml || !cfg.onApply;
       copyBtn.disabled = !result;
     }
@@ -117,6 +133,8 @@ export function openAiDialog(cfg) {
           diagramTitle: cfg.title,
           currentSource: withSource ? cfg.currentSource : '',
           context: withContext ? projectContext(cfg.project, cfg.section) : '',
+          system: cfg.systemPrompt,
+          sourceLabel: cfg.sourceLabel,
         });
         result = await complete({
           messages,
@@ -127,11 +145,11 @@ export function openAiDialog(cfg) {
             output.scrollTop = output.scrollHeight;
           },
         });
-        const uml = extractPlantUml(result);
+        const uml = extract(result);
         output.textContent = uml || result;
         statusEl.textContent = uml
           ? 'Fertig — Vorschlag prüfen und übernehmen.'
-          : 'Antwort enthält keinen PlantUML-Block. Anweisung schärfen oder erneut generieren.';
+          : `Antwort enthält keinen ${cfg.artefactLabel || 'PlantUML'}-Block. Anweisung schärfen oder erneut generieren.`;
       } catch (err) {
         if (err.name === 'AbortError') statusEl.textContent = 'Abgebrochen.';
         else {
@@ -147,7 +165,7 @@ export function openAiDialog(cfg) {
       }
     }
 
-    const quick = QUICK_PROMPTS[cfg.section] || QUICK_PROMPTS.default;
+    const quick = cfg.quickPrompts || QUICK_PROMPTS[cfg.section] || QUICK_PROMPTS.default;
 
     return h('div', { class: 'ai-dialog' },
       h('h2', {}, 'KI-Assistent'),

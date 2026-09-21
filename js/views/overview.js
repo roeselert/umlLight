@@ -19,11 +19,21 @@ function statusRow(label, done, detail, href) {
   ];
 }
 
+function schemaDetail(p) {
+  const s = p.schemas || {};
+  const parts = [];
+  parts.push(s.openapi?.custom ? 'OpenAPI: eigene Fassung' : 'OpenAPI: generiert');
+  parts.push(s.avro?.custom ? 'Avro: eigene Fassung' : 'Avro: generiert');
+  return parts.join(' · ');
+}
+
 function gitCard(p, ctx) {
   const state = sync.linkOf(p);
+  const target = sync.targetFor(p);
   const chipHolder = h('span', {});
   const detail = h('span', { class: 'hint', style: { margin: 0 } },
-    state ? `${state.repo || gh.repoKey()} · ${state.branch} · ${state.path}` : `${gh.repoKey()} · noch nicht verknüpft`);
+    state ? `${gh.targetLabel(target)} · ${state.branch || 'Standard-Branch'} · ${state.path}`
+      : `${gh.targetLabel(target)} · noch nicht verknüpft`);
   sync.quickStatus(p).then(({ status }) => chipHolder.appendChild(statusChip(status))).catch(() => {});
   return h('div', { class: 'card' },
     h('div', { class: 'card-head' },
@@ -48,17 +58,17 @@ export function renderOverview(main, ctx) {
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn primary', onclick: () => openExportDialog(p) }, 'Markdown exportieren'),
       h('button', { class: 'btn', onclick: () => download(`${slug(p.name)}.json`, store.exportProject(p.id)) }, 'JSON exportieren'),
-      gh.isConfigured() ? h('button', { class: 'btn', onclick: () => openGitDialog(p, () => ctx.rerender()) }, 'Mit Repository synchronisieren') : null)));
+      gh.isConfigured(sync.targetFor(p)) ? h('button', { class: 'btn', onclick: () => openGitDialog(p, () => ctx.rerender()) }, 'Mit Repository synchronisieren') : null)));
 
-  if (gh.isConfigured()) main.appendChild(gitCard(p, ctx));
+  if (gh.isConfigured(sync.targetFor(p))) main.appendChild(gitCard(p, ctx));
 
   const ucCount = (p.useCases.useCases || []).length;
   const vision = p.vision || {};
   main.appendChild(h('div', { class: 'card' },
     h('h2', {}, 'Stand der Spezifikation'),
     h('div', { class: 'table-wrap' }, gridTable(['Bereich', 'Status', 'Umfang'], [
-      statusRow('Produktvision', !!(vision.statement || vision.productName),
-        `${(vision.goals || []).filter(Boolean).length} Ziele`, `${base}/vision`),
+      statusRow('Produktvision', (vision.goals || []).filter(Boolean).length > 0 || !!(p.summary || '').trim(),
+        `${(vision.goals || []).filter(Boolean).length} Ziele · ${(vision.nonGoals || []).filter(Boolean).length} Nicht-Ziele`, `${base}/vision`),
       statusRow('Use-Case-Modell', ucCount > 0,
         `${(p.useCases.actors || []).length} Akteure · ${ucCount} Use Cases`, `${base}/usecases`),
       statusRow('Deployment', p.deployment.mode === 'text' ? !!p.deployment.text.trim() : (p.deployment.nodes || []).length > 0,
@@ -67,7 +77,9 @@ export function renderOverview(main, ctx) {
       statusRow('Datenmodell', (p.dataModel.entities || []).length > 0,
         `${(p.dataModel.entities || []).length} Entitäten · ${(p.dataModel.relations || []).length} Beziehungen`, `${base}/datamodel`),
       statusRow('View-Modell', (p.viewModel.views || []).length > 0,
-        `${(p.viewModel.views || []).length} Views · ${(p.viewModel.activities || []).length} Abläufe`, `${base}/viewmodel`)]))));
+        `${(p.viewModel.views || []).length} Views · ${(p.viewModel.activities || []).length} Abläufe`, `${base}/viewmodel`),
+      statusRow('API & Schemas', (p.dataModel.entities || []).length > 0,
+        schemaDetail(p), `${base}/schemas`)]))));
 
   const panels = [
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],

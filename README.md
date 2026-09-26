@@ -10,9 +10,9 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | --- | --- |
 | **Projekte** | Anlegen, duplizieren, löschen, als JSON exportieren/importieren, Gesamt-Backup |
 | **Produktvision** | Kurzbeschreibung, Ziele, Nicht-Ziele, Rahmenbedingungen |
-| **Use-Case-Modell** | Akteure, Use Cases mit Priorität/Vorbedingung/Ergebnis, `include`/`extend`, Ablaufschritte inkl. Entscheidungen → Use-Case-Diagramm + Aktivitätsdiagramm je Use Case |
+| **Use-Case-Modell** | Akteure, Use Cases mit Priorität/Vorbedingung/Ergebnis, `include`/`extend`, Ablaufschritte inkl. Entscheidungen → Use-Case-Diagramm + Aktivitätsdiagramm je Use Case; dazu frei gestaltbare Abläufe (Aktivitätsdiagramme), mit denen Use Cases verknüpft werden |
 | **Deployment** | Wahlweise Knotenmodell (verschachtelbar, Artefakte, Verbindungen) **oder** reine Textbeschreibung → Deployment-Diagramm |
-| **Robustheitsmodell** | Boundary–Control–Entity nach ICONIX, gruppiert in Business-Komponenten: Boundaries (Masken, APIs mit verknüpften Endpunkten, Fremdsysteme), Controls als Freitext-Spezifikation, Entitäten mit Attributen und typisierten Beziehungen, Interaktionen mit Regelprüfung → Robustheitsdiagramm (gesamt oder je Komponente), ER-Diagramm, beliebig viele Aktivitätsdiagramme |
+| **Robustheitsmodell** | Boundary–Control–Entity nach ICONIX, gruppiert in Business-Komponenten: Boundaries (Masken, APIs mit verknüpften Endpunkten, Fremdsysteme), Controls als Freitext-Spezifikation, Entitäten mit Attributen und typisierten Beziehungen, Interaktionen mit Regelprüfung → Robustheitsdiagramm (gesamt oder je Komponente), ER-Diagramm |
 | **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Markdown-Export |
 | **KI-Assistent** | Diagramme per Anweisung erzeugen oder ändern — über die Hugging-Face-Inference-API, Modell/Token/System-Prompt frei konfigurierbar |
 | **Markdown-Export** | Spezifikation als Markdown, wahlweise mit Inhaltsverzeichnis, PlantUML-Quelltext und/oder Diagramm-Bildlinks; einzeln oder alle Projekte in einem Dokument |
@@ -49,8 +49,8 @@ dann ihre Elemente und alles, womit sie interagieren.
 
 **Migration.** Projekte im alten Format werden beim Laden übernommen: Views werden
 zu Boundaries vom Typ „Oberfläche", Navigationsübergänge zu Interaktionen,
-Aktivitätsdiagramme bleiben erhalten, ein überschriebenes Navigationsdiagramm wird
-als Ablauf abgelegt. Alte Links auf `#/…/datamodel` und `#/…/viewmodel` führen
+Aktivitätsdiagramme werden zu Abläufen im Use-Case-Modell, ein überschriebenes
+Navigationsdiagramm wird ebenfalls als Ablauf abgelegt. Alte Links auf `#/…/datamodel` und `#/…/viewmodel` führen
 zum Robustheitsmodell.
 
 ## API & Schemas
@@ -229,7 +229,8 @@ Kein Build, keine Abhängigkeiten. Änderungen an den Dateien wirken nach einem 
 
 ## Datenformat
 
-Export einzelner Projekte: `{ "type": "umllight.project", "version": 2, "project": { … } }`
-Gesamt-Backup: `{ "type": "umllight.backup", "version": 2, "projects": [ … ] }`
+Export einzelner Projekte: `{ "type": "umllight.project", "version": 3, "project": { … } }`
+Gesamt-Backup: `{ "type": "umllight.backup", "version": 3, "projects": [ … ] }`
 Beide Formate lassen sich über „Importieren" wieder einlesen; Dateien mit
-`version: 1` (getrenntes View-Modell) werden dabei automatisch migriert.
+ältere Versionen (getrenntes View-Modell, Abläufe im Robustheitsmodell) werden
+dabei automatisch migriert.

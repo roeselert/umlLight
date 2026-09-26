@@ -4,7 +4,7 @@ const KEY = 'umllight.db.v1';
 const SETTINGS_KEY = 'umllight.settings.v1';
 const GIT_TOKEN_KEY = 'umllight.gittoken.v1';
 const GIT_STATE_KEY = 'umllight.gitstate.v1';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const DEFAULT_SERVER = 'https://www.plantuml.com/plantuml';
 export const DEFAULT_GIT_API = 'https://api.github.com';
@@ -48,13 +48,14 @@ export function emptyProject(name = 'Neues Projekt') {
     createdAt: now,
     updatedAt: now,
     vision: { goals: [], nonGoals: [], constraints: '' },
-    useCases: { actors: [], useCases: [], systemName: '', custom: null },
+    // activities are free-form flows that use cases can link to (activityIds)
+    useCases: { actors: [], useCases: [], activities: [], systemName: '', custom: null },
     deployment: { mode: 'model', text: '', nodes: [], links: [], custom: null },
     // entities (with attributes and relations) are the "E" of the
     // robustness model; they carry an optional componentId
     dataModel: { entities: [], relations: [], custom: null },
     robustness: {
-      components: [], boundaries: [], controls: [], links: [], activities: [], custom: null,
+      components: [], boundaries: [], controls: [], links: [], custom: null,
     },
     schemas: {
       openapi: {
@@ -85,15 +86,22 @@ function normalizeProject(p) {
   for (const arr of ['goals', 'nonGoals']) if (!Array.isArray(merged.vision[arr])) merged.vision[arr] = [];
   merged.useCases.actors ||= [];
   merged.useCases.useCases ||= [];
+  if (!Array.isArray(merged.useCases.activities)) merged.useCases.activities = [];
+  for (const c of merged.useCases.useCases) if (!Array.isArray(c.activityIds)) c.activityIds = [];
   merged.deployment.nodes ||= [];
   merged.deployment.links ||= [];
   merged.dataModel.entities ||= [];
   merged.dataModel.relations ||= [];
-  for (const arr of ['components', 'boundaries', 'controls', 'links', 'activities']) {
+  for (const arr of ['components', 'boundaries', 'controls', 'links']) {
     if (!Array.isArray(merged.robustness[arr])) merged.robustness[arr] = [];
   }
-  if (p.viewModel && !p.robustness) migrateViewModel(merged.robustness, p.viewModel);
+  if (p.viewModel && !p.robustness) migrateViewModel(merged, p.viewModel);
   delete merged.viewModel;
+  // schema v2 kept the activities in the robustness model
+  if (Array.isArray(merged.robustness.activities)) {
+    merged.useCases.activities.push(...merged.robustness.activities);
+    delete merged.robustness.activities;
+  }
   return merged;
 }
 
@@ -101,9 +109,10 @@ function normalizeProject(p) {
  * Schema v1 kept screens in a separate view model. In the robustness model
  * they become UI boundaries; navigation turns into boundary links (flagged in
  * the editor, since robustness rules route them through a control) and the
- * activity diagrams move over unchanged.
+ * activity diagrams move to the use-case model.
  */
-function migrateViewModel(rb, vm) {
+function migrateViewModel(project, vm) {
+  const rb = project.robustness;
   for (const v of vm.views || []) {
     rb.boundaries.push({
       id: v.id || uid('bnd'), name: v.name || 'View', kind: 'ui', componentId: '',
@@ -112,9 +121,10 @@ function migrateViewModel(rb, vm) {
     });
   }
   for (const l of vm.links || []) rb.links.push({ from: l.from, to: l.to, label: l.label || '' });
-  for (const a of vm.activities || []) rb.activities.push(a);
+  const flows = project.useCases.activities;
+  for (const a of vm.activities || []) flows.push(a);
   if (vm.custom) {
-    rb.activities.push({
+    flows.push({
       id: uid('act'), name: 'Navigation (aus View-Modell übernommen)', description: '', uml: vm.custom,
     });
   }

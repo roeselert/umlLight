@@ -72,7 +72,7 @@ export function renderOverview(main, ctx) {
       statusRow('Produktvision', (vision.goals || []).filter(Boolean).length > 0 || !!(p.summary || '').trim(),
         `${(vision.goals || []).filter(Boolean).length} Ziele · ${(vision.nonGoals || []).filter(Boolean).length} Nicht-Ziele`, `${base}/vision`),
       statusRow('Use-Case-Modell', ucCount > 0,
-        `${(p.useCases.actors || []).length} Akteure · ${ucCount} Use Cases`, `${base}/usecases`),
+        `${(p.useCases.actors || []).length} Akteure · ${ucCount} Use Cases · ${(p.useCases.activities || []).length} Abläufe`, `${base}/usecases`),
       statusRow('Robustheitsmodell', rb.boundaries.length + rb.controls.length + entities.length > 0,
         `${rb.components.length} Komponenten · ${rb.boundaries.length} Boundaries · ${rb.controls.length} Controls · ${entities.length} Entitäten · ${rb.links.length} Interaktionen`,
         `${base}/robustness`),
@@ -86,7 +86,7 @@ export function renderOverview(main, ctx) {
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],
     ['Robustheitsdiagramm', () => rb.custom || robustnessUml(p), `${slug(p.name)}-robustheit`],
     ['Datenmodell', () => p.dataModel.custom || dataModelUml(p.dataModel, p.name), `${slug(p.name)}-datamodel`],
-    ...rb.activities.map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
+    ...(p.useCases.activities || []).map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
     ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
   ];
   for (const [title, generate, fileName] of panels) {

@@ -7,7 +7,7 @@ import { h, clear, field, textInput, textArea, select, listItem, makeSortable, w
   confirmDialog, debounce, toast, syncTitle, moveActions, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
-import { robustnessUml, ACTIVITY_TEMPLATE } from '../generators.js';
+import { robustnessUml } from '../generators.js';
 import {
   KINDS, BOUNDARY_KINDS, HTTP_METHODS, participants, ruleViolation, generatedOperations, opKey, componentName,
 } from '../robustness.js';
@@ -19,7 +19,6 @@ const TABS = [
   ['controls', 'Controls'],
   ['entities', 'Entitäten'],
   ['links', 'Interaktionen'],
-  ['activities', 'Abläufe'],
 ];
 
 export function renderRobustness(main, ctx) {
@@ -91,7 +90,6 @@ export function renderRobustness(main, ctx) {
     controls: rb.controls.length,
     entities: p.dataModel.entities.length,
     links: rb.links.length,
-    activities: rb.activities.length,
   });
   const renderTabBar = () => {
     clear(tabBar);
@@ -114,7 +112,6 @@ export function renderRobustness(main, ctx) {
       controls: renderControls,
       entities: () => renderEntityEditor(body, ctx, () => { refresh(); renderTabBar(); }),
       links: renderLinks,
-      activities: renderActivities,
     })[tab]();
   };
 
@@ -417,48 +414,6 @@ export function renderRobustness(main, ctx) {
       rebuild();
     }, wrap, 'Regeln: Akteur ↔ Boundary, Boundary ↔ Control, Control ↔ Control/Entität. Verstöße werden markiert, aber nicht verhindert. Akteure kommen aus dem Use-Case-Modell.'));
     rebuild();
-  }
-
-  // ---------------------------------------------------------- activities
-  function renderActivities() {
-    const wrap = h('div', {});
-    const rebuild = () => {
-      clear(wrap);
-      if (!rb.activities.length) wrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Ablaufdiagramme.'));
-      for (const act of rb.activities) {
-        wrap.appendChild(withId(listItem({
-          title: act.name || 'Ablauf',
-          actions: [...moveActions(rb.activities, act.id, () => { patch(() => {}); rebuild(); }),
-            deleteAction('Ablauf', `„${act.name}" wird entfernt.`, () => {
-              changed((prj) => { prj.robustness.activities = prj.robustness.activities.filter((x) => x.id !== act.id); });
-              rebuild();
-            })],
-          body: () => h('div', {},
-            field('Name', textInput(act.name, function (val) { act.name = val; syncTitle(this, val, 'Ablauf'); save(() => {}); })),
-            field('Beschreibung', textArea(act.description, (val) => { act.description = val; save(() => {}); }, { rows: 2 })),
-            h('p', { class: 'hint' }, 'Über „Quelle" lässt sich das Aktivitätsdiagramm direkt in PlantUML bearbeiten.'),
-            diagramPanel({
-              title: act.name || 'Ablauf',
-              project: p,
-              section: 'robustness',
-              fileName: `${p.name}-${act.name || 'ablauf'}`,
-              generate: () => act.uml || ACTIVITY_TEMPLATE,
-              getCustom: () => act.uml ?? null,
-              setCustom: (val) => patch(() => { act.uml = val === null ? ACTIVITY_TEMPLATE : val; }),
-            })),
-        }), act.id));
-      }
-    };
-    body.appendChild(card('Ablaufdiagramme', '+ Ablauf', () => {
-      changed((prj) => prj.robustness.activities.push({
-        id: store.uid('act'), name: 'Neuer Ablauf', description: '', uml: ACTIVITY_TEMPLATE,
-      }));
-      rebuild();
-      toast('Ablauf mit Vorlage angelegt');
-    }, wrap));
-    rebuild();
-    makeSortable(wrap, (ids) => patch((prj) =>
-      prj.robustness.activities.sort((x, y) => ids.indexOf(x.id) - ids.indexOf(y.id))));
   }
 
   renderTabBar();

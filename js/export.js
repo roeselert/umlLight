@@ -17,7 +17,7 @@ const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
 const anchor = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s/g, '-');
 
 export const DEFAULT_OPTIONS = {
-  vision: true, usecases: true, deployment: true, robustness: true, schemas: true,
+  vision: true, usecases: true, robustness: true, schemas: true, deployment: true,
   source: true, images: false, toc: true, scenarios: true,
 };
 
@@ -93,35 +93,6 @@ export async function buildMarkdown(p, options = {}) {
       if (opts.scenarios && (steps.length || c.customUml)) {
         push(...await diagramBlock(`Ablauf ${c.name}`, c.customUml || useCaseScenarioUml(c, actors), opts));
       }
-    }
-  }
-
-  if (opts.deployment) {
-    section(++n, 'Deployment');
-    if (p.deployment.mode === 'text') {
-      push(clean(p.deployment.text) || '_Keine Beschreibung erfasst._', '');
-    } else {
-      const nodes = p.deployment.nodes || [];
-      if (nodes.length) {
-        push('| Knoten | Art | Technologie | Enthalten in | Beschreibung |', '| --- | --- | --- | --- | --- |');
-        for (const nd of nodes) {
-          const parent = nodes.find((x) => x.id === nd.parentId)?.name || '';
-          push(`| ${nd.name} | ${nd.kind || 'node'} | ${clean(nd.tech)} | ${parent} | ${clean(nd.description).replace(/\n/g, ' ')} |`);
-        }
-        push('');
-      }
-      const links = (p.deployment.links || []).filter((l) => clean(l.label));
-      if (links.length) {
-        push('**Verbindungen**', '');
-        for (const l of links) {
-          const from = nodes.find((x) => x.id === l.from)?.name || '?';
-          const to = nodes.find((x) => x.id === l.to)?.name || '?';
-          push(`- ${from} → ${to}: ${l.label}`);
-        }
-        push('');
-      }
-      push(...await diagramBlock('Deployment-Diagramm', p.deployment.custom || deploymentUml(p.deployment, p.name), opts));
-      if (clean(p.deployment.text)) push(clean(p.deployment.text), '');
     }
   }
 
@@ -220,6 +191,35 @@ export async function buildMarkdown(p, options = {}) {
     push('### Avro', '', '```json', avro, '```', '');
   }
 
+  if (opts.deployment) {
+    section(++n, 'Deployment');
+    if (p.deployment.mode === 'text') {
+      push(clean(p.deployment.text) || '_Keine Beschreibung erfasst._', '');
+    } else {
+      const nodes = p.deployment.nodes || [];
+      if (nodes.length) {
+        push('| Knoten | Art | Technologie | Enthalten in | Beschreibung |', '| --- | --- | --- | --- | --- |');
+        for (const nd of nodes) {
+          const parent = nodes.find((x) => x.id === nd.parentId)?.name || '';
+          push(`| ${nd.name} | ${nd.kind || 'node'} | ${clean(nd.tech)} | ${parent} | ${clean(nd.description).replace(/\n/g, ' ')} |`);
+        }
+        push('');
+      }
+      const links = (p.deployment.links || []).filter((l) => clean(l.label));
+      if (links.length) {
+        push('**Verbindungen**', '');
+        for (const l of links) {
+          const from = nodes.find((x) => x.id === l.from)?.name || '?';
+          const to = nodes.find((x) => x.id === l.to)?.name || '?';
+          push(`- ${from} → ${to}: ${l.label}`);
+        }
+        push('');
+      }
+      push(...await diagramBlock('Deployment-Diagramm', p.deployment.custom || deploymentUml(p.deployment, p.name), opts));
+      if (clean(p.deployment.text)) push(clean(p.deployment.text), '');
+    }
+  }
+
   if (opts.toc && heads.length > 1) {
     const toc = ['**Inhalt**', '', ...heads.map((t) => `- [${t}](#${anchor(t)})`), ''];
     L.splice(tocIndex, 0, ...toc);
@@ -278,9 +278,9 @@ export function openExportDialog(projectOrList) {
       h('h3', {}, 'Abschnitte'),
       toggle('vision', 'Produktvision'),
       toggle('usecases', 'Use-Case-Modell'),
-      toggle('deployment', 'Deployment'),
       toggle('robustness', 'Robustheitsmodell (Komponenten, B/C/E, Abläufe)'),
       toggle('schemas', 'API & Schemas'),
+      toggle('deployment', 'Deployment'),
       h('h3', { style: { marginTop: '14px' } }, 'Optionen'),
       toggle('toc', 'Inhaltsverzeichnis'),
       toggle('source', 'PlantUML-Quelltext einbetten'),

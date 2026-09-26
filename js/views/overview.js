@@ -73,21 +73,21 @@ export function renderOverview(main, ctx) {
         `${(vision.goals || []).filter(Boolean).length} Ziele · ${(vision.nonGoals || []).filter(Boolean).length} Nicht-Ziele`, `${base}/vision`),
       statusRow('Use-Case-Modell', ucCount > 0,
         `${(p.useCases.actors || []).length} Akteure · ${ucCount} Use Cases`, `${base}/usecases`),
-      statusRow('Deployment', p.deployment.mode === 'text' ? !!p.deployment.text.trim() : (p.deployment.nodes || []).length > 0,
-        p.deployment.mode === 'text' ? 'Textbeschreibung' : `${(p.deployment.nodes || []).length} Knoten · ${(p.deployment.links || []).length} Verbindungen`,
-        `${base}/deployment`),
       statusRow('Robustheitsmodell', rb.boundaries.length + rb.controls.length + entities.length > 0,
         `${rb.components.length} Komponenten · ${rb.boundaries.length} Boundaries · ${rb.controls.length} Controls · ${entities.length} Entitäten · ${rb.links.length} Interaktionen`,
         `${base}/robustness`),
       statusRow('API & Schemas', entities.length > 0,
-        schemaDetail(p), `${base}/schemas`)]))));
+        schemaDetail(p), `${base}/schemas`),
+      statusRow('Deployment', p.deployment.mode === 'text' ? !!p.deployment.text.trim() : (p.deployment.nodes || []).length > 0,
+        p.deployment.mode === 'text' ? 'Textbeschreibung' : `${(p.deployment.nodes || []).length} Knoten · ${(p.deployment.links || []).length} Verbindungen`,
+        `${base}/deployment`)]))));
 
   const panels = [
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],
-    ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
     ['Robustheitsdiagramm', () => rb.custom || robustnessUml(p), `${slug(p.name)}-robustheit`],
     ['Datenmodell', () => p.dataModel.custom || dataModelUml(p.dataModel, p.name), `${slug(p.name)}-datamodel`],
     ...rb.activities.map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
+    ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
   ];
   for (const [title, generate, fileName] of panels) {
     main.appendChild(diagramPanel({ title, generate, fileName }));

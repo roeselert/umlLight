@@ -85,7 +85,7 @@ export function renderOverview(main, ctx) {
   const panels = [
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],
     ['Robustheitsdiagramm', () => rb.custom || robustnessUml(p), `${slug(p.name)}-robustheit`],
-    ['Datenmodell', () => p.dataModel.custom || dataModelUml(p.dataModel, p.name), `${slug(p.name)}-datamodel`],
+    ['Datenmodell', () => p.dataModel.custom || dataModelUml(p.dataModel, p.name, p.robustness.components), `${slug(p.name)}-datamodel`],
     ...(p.useCases.activities || []).map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
     ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
   ];

@@ -41,7 +41,7 @@ export function renderEntityEditor(main, ctx, onChange = () => {}) {
     project: p,
     section: 'datamodel',
     fileName: `${p.name}-datamodel`,
-    generate: () => dataModelUml(dm, p.name),
+    generate: () => dataModelUml(dm, p.name, p.robustness.components),
     getCustom: () => dm.custom,
     setCustom: (val) => patch((prj) => { prj.dataModel.custom = val; }),
   });
@@ -127,7 +127,9 @@ export function renderEntityEditor(main, ctx, onChange = () => {}) {
         class: 'btn small primary',
         onclick: () => {
           patchAndDraw((prj) => prj.dataModel.entities.push({
-            id: store.uid('ent'), name: 'NeueEntität', stereotype: '', description: '', componentId: '',
+            id: store.uid('ent'), name: 'NeueEntität', stereotype: '', description: '',
+            // like boundaries and controls: new entities join the component in focus
+            componentId: prj.robustness.components.some((c) => c.id === ctx.robustFocus) ? ctx.robustFocus : '',
             attributes: [{ name: 'id', type: 'UUID', key: 'pk', required: true }],
           }));
           renderEntities();

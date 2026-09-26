@@ -152,6 +152,41 @@ export function renderRobustness(main, ctx) {
   function renderComponents() {
     const wrap = h('div', {});
     const members = (id) => participants(p).filter((x) => x.kind !== 'actor' && x.componentId === id);
+    // toggle membership of boundaries, controls and entities in one place;
+    // an element belongs to at most one component, so selecting moves it
+    const membersEditor = (c, rebuildList) => {
+      const box = h('div', {});
+      const draw = () => {
+        clear(box);
+        const all = participants(p).filter((x) => x.kind !== 'actor');
+        if (!all.length) {
+          box.appendChild(h('p', { class: 'hint' }, 'Noch keine Boundaries, Controls oder Entitäten angelegt.'));
+          return;
+        }
+        for (const kind of ['boundary', 'control', 'entity']) {
+          const list = all.filter((x) => x.kind === kind);
+          if (!list.length) continue;
+          box.appendChild(h('div', { style: { marginBottom: '10px' } },
+            h('span', { class: 'hint', style: { display: 'block', marginBottom: '4px' } }, `${KINDS[kind].label}s`),
+            h('div', { class: 'chips' }, list.map((x) => {
+              const on = x.componentId === c.id;
+              const other = !on && x.componentId ? componentName(p, x.componentId) : '';
+              return h('button', {
+                class: `chip chip-toggle ${on ? 'on' : ''}`,
+                title: other ? `Gehört zu „${other}" — Auswahl verschiebt es hierher` : '',
+                onclick: () => {
+                  x.ref.componentId = on ? '' : c.id;
+                  changed(() => {});
+                  draw();
+                  rebuildList();
+                },
+              }, other ? `${x.name} (${other})` : x.name);
+            }))));
+        }
+      };
+      draw();
+      return box;
+    };
     const rebuild = () => {
       clear(wrap);
       if (!rb.components.length) wrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Business-Komponenten.'));
@@ -176,9 +211,7 @@ export function renderRobustness(main, ctx) {
             field('Name', textInput(c.name, function (val) { c.name = val; syncTitle(this, val, 'Komponente'); save(() => {}); redrawSoon(); })),
             field('Verantwortung / Beschreibung', textArea(c.description, (val) => { c.description = val; save(() => {}); }, { rows: 3 })),
             h('h3', {}, 'Elemente'),
-            m.length
-              ? h('div', { class: 'chips' }, m.map((x) => h('span', { class: 'chip' }, `${KINDS[x.kind].short} · ${x.name}`)))
-              : h('p', { class: 'hint' }, 'Noch keine Elemente — Boundaries, Controls und Entitäten lassen sich in ihren Tabs zuordnen.'),
+            membersEditor(c, rebuild),
             h('div', { class: 'btn-row', style: { marginTop: '10px' } },
               h('button', {
                 class: 'btn small',

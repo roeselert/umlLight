@@ -133,9 +133,22 @@ export function projectContext(project, section) {
       .map((e) => `${e.name}(${(e.attributes || []).map((a) => a.name).filter(Boolean).join(', ')})`);
     if (ents.length) L.push(`Entitäten: ${ents.join(' | ')}`);
   }
-  if (section === 'viewmodel' || section === 'all') {
-    const views = (project.viewModel.views || []).map((x) => x.name).filter(Boolean);
-    if (views.length) L.push(`Views: ${views.join(', ')}`);
+  if (section === 'robustness' || section === 'all') {
+    const rb = project.robustness || {};
+    const comp = (id) => (rb.components || []).find((c) => c.id === id)?.name;
+    const named = (list) => list.filter((x) => x.name).map((x) => (comp(x.componentId) ? `${x.name} [${comp(x.componentId)}]` : x.name));
+    const comps = (rb.components || []).map((c) => c.name).filter(Boolean);
+    if (comps.length) L.push(`Business-Komponenten: ${comps.join(', ')}`);
+    const bnd = named(rb.boundaries || []);
+    if (bnd.length) L.push(`Boundaries: ${bnd.join(', ')}`);
+    const ctl = named(rb.controls || []);
+    if (ctl.length) L.push(`Controls: ${ctl.join(', ')}`);
+    if (section === 'robustness') {
+      const ents = named(project.dataModel.entities || []);
+      if (ents.length) L.push(`Entitäten: ${ents.join(', ')}`);
+      const actors = (project.useCases.actors || []).map((a) => a.name).filter(Boolean);
+      if (actors.length) L.push(`Akteure: ${actors.join(', ')}`);
+    }
   }
   return L.join('\n');
 }

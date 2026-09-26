@@ -22,9 +22,10 @@ const QUICK_PROMPTS = {
     'Ergänze Fremdschlüssel, Zeitstempel und fehlende Beziehungen.',
     'Normalisiere das Modell auf die 3. Normalform.',
   ],
-  viewmodel: [
-    'Erzeuge ein Navigationsdiagramm der wichtigsten Masken.',
-    'Ergänze Fehler- und Leerzustände als eigene Views.',
+  robustness: [
+    'Erzeuge ein Robustheitsdiagramm (boundary, control, entity) aus den Use Cases.',
+    'Prüfe die Robustheitsregeln und führe Verbindungen zwischen Boundaries und Entitäten über Controls.',
+    'Gruppiere die Elemente nach Business-Komponenten als package.',
     'Erzeuge ein Aktivitätsdiagramm für den Hauptablauf.',
   ],
   default: [

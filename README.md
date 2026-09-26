@@ -12,20 +12,50 @@ Diagramme entstehen als **PlantUML**-Quelltext und werden von einem PlantUML-Ser
 | **Produktvision** | Kurzbeschreibung, Ziele, Nicht-Ziele, Rahmenbedingungen |
 | **Use-Case-Modell** | Akteure, Use Cases mit Priorität/Vorbedingung/Ergebnis, `include`/`extend`, Ablaufschritte inkl. Entscheidungen → Use-Case-Diagramm + Aktivitätsdiagramm je Use Case |
 | **Deployment** | Wahlweise Knotenmodell (verschachtelbar, Artefakte, Verbindungen) **oder** reine Textbeschreibung → Deployment-Diagramm |
-| **Datenmodell** | Entitäten mit Attributen (Typ, PK/FK, Pflicht) und typisierten Beziehungen (1:n, n:m, Vererbung, Komposition …) → ER-Diagramm |
-| **View-Modell** | Views mit Elementen, Navigationsübergänge → Zustands-/Navigationsdiagramm, plus beliebig viele Aktivitätsdiagramme |
+| **Robustheitsmodell** | Boundary–Control–Entity nach ICONIX, gruppiert in Business-Komponenten: Boundaries (Masken, APIs mit verknüpften Endpunkten, Fremdsysteme), Controls als Freitext-Spezifikation, Entitäten mit Attributen und typisierten Beziehungen, Interaktionen mit Regelprüfung → Robustheitsdiagramm (gesamt oder je Komponente), ER-Diagramm, beliebig viele Aktivitätsdiagramme |
 | **Übersicht** | Stand der Spezifikation, alle Diagramme auf einer Seite, Markdown-Export |
 | **KI-Assistent** | Diagramme per Anweisung erzeugen oder ändern — über die Hugging-Face-Inference-API, Modell/Token/System-Prompt frei konfigurierbar |
 | **Markdown-Export** | Spezifikation als Markdown, wahlweise mit Inhaltsverzeichnis, PlantUML-Quelltext und/oder Diagramm-Bildlinks; einzeln oder alle Projekte in einem Dokument |
-| **API & Schemas** | OpenAPI-3.1-Spezifikation und Avro-Records aus dem Datenmodell, mit Optionen, eigener Fassung und Export |
+| **API & Schemas** | OpenAPI-3.1-Spezifikation und Avro-Records aus Entitäten und API-Boundaries, mit Optionen, eigener Fassung und Export |
 | **GitHub-Sync** | Projekte als JSON in einem frei wählbaren Repository versionieren: Push, Pull, Konflikterkennung, Pull Requests, Commit-Verlauf mit Wiederherstellen, Import |
 
 Jedes generierte Diagramm kann per **„Quelle → Überschreiben"** durch handgeschriebenes PlantUML ersetzt
 und jederzeit wieder auf die generierte Fassung zurückgesetzt werden.
 
+## Robustheitsmodell
+
+Statt Datenmodell und Views getrennt zu pflegen, beschreibt ein Robustheitsmodell
+(Boundary–Control–Entity) die Anwendung als Ganzes:
+
+| Element | Inhalt |
+| --- | --- |
+| **Business-Komponente** | Fachlicher Baustein mit Verantwortung; bündelt Boundaries, Controls und Entitäten und wird im Diagramm als Paket gezeichnet |
+| **Boundary** | Schnittstelle nach außen — *Oberfläche/Maske* (mit Elementen), *API* (mit Operationen) oder *Fremdsystem* |
+| **Control** | Fachlogik, frei als Text spezifiziert (Regeln, Abläufe, Fehlerfälle) |
+| **Entität** | Wie bisher: Attribute mit Typ, PK/FK, Pflicht sowie typisierte Beziehungen |
+| **Interaktion** | Verbindung zwischen Akteur (aus dem Use-Case-Modell), Boundary, Control und Entität |
+
+**API-Boundaries** werden mit Operationen (`GET /auftraege/{id}` …) verknüpft. Die
+aus den Entitäten generierten CRUD-Endpunkte lassen sich direkt übernehmen und sind
+als „generiert" markiert; eigene Endpunkte werden als Stubs in die
+OpenAPI-Spezifikation aufgenommen und mit der Business-Komponente getaggt.
+
+**Regeln.** Akteur ↔ Boundary, Boundary ↔ Control, Control ↔ Control/Entität.
+Verstöße (etwa Boundary → Boundary oder Boundary → Entität) werden markiert, aber
+nicht verhindert.
+
+Das Robustheitsdiagramm lässt sich auf eine Komponente eingrenzen; gezeigt werden
+dann ihre Elemente und alles, womit sie interagieren.
+
+**Migration.** Projekte im alten Format werden beim Laden übernommen: Views werden
+zu Boundaries vom Typ „Oberfläche", Navigationsübergänge zu Interaktionen,
+Aktivitätsdiagramme bleiben erhalten, ein überschriebenes Navigationsdiagramm wird
+als Ablauf abgelegt. Alte Links auf `#/…/datamodel` und `#/…/viewmodel` führen
+zum Robustheitsmodell.
+
 ## API & Schemas
 
-Aus dem Datenmodell entstehen zwei Artefakte, die sich unabhängig voneinander
+Aus den Entitäten (und den API-Boundaries) des Robustheitsmodells entstehen zwei Artefakte, die sich unabhängig voneinander
 konfigurieren, überschreiben und exportieren lassen:
 
 **OpenAPI 3.1** — `components.schemas` je Entität plus, auf Wunsch, vollständige
@@ -53,7 +83,7 @@ Jedes Diagramm hat eine **✨ KI**-Schaltfläche. Dort eine Anweisung eingeben
 live gestreamt, der PlantUML-Block daraus extrahiert und auf Wunsch als Quelle
 des Diagramms übernommen. Mitgesendet werden die Anweisung sowie optional die
 aktuelle Diagrammquelle und ein kompakter Projektkontext (Vision, Akteure,
-Entitäten, Views) — beides pro Anfrage abwählbar.
+Komponenten, Boundaries, Controls, Entitäten) — beides pro Anfrage abwählbar.
 
 Einrichtung unter **Einstellungen → KI-Assistent**:
 
@@ -182,14 +212,15 @@ js/store.js           localStorage-Persistenz, Import/Export
 js/plantuml.js        PlantUML-Kodierung (deflate + Base64, Hex-Fallback)
 js/diagram.js         Diagramm-Panel (rendern, zoomen, Quelle, Download, Überschreiben)
 js/generators.js      Modell → PlantUML
-js/schemas.js         Datenmodell → OpenAPI 3.1 und Avro (inkl. YAML-Ausgabe)
+js/schemas.js         Entitäten/API-Boundaries → OpenAPI 3.1 und Avro (inkl. YAML-Ausgabe)
+js/robustness.js      BCE-Hilfen: Teilnehmer, Robustheitsregeln, API-Operationen
 js/export.js          Markdown-Export inkl. Optionsdialog
 js/ai.js              Hugging-Face-Client (Streaming, PlantUML-Extraktion)
 js/aipanel.js         KI-Dialog je Diagramm
 js/github.js          GitHub-REST-Client (Git-Data-API, atomare Commits)
 js/gitsync.js         Sync-Logik: Status, Push, Pull, PR, Verlauf, Import
 js/gitpanel.js        Sync- und Import-Dialog
-js/views/*.js         Die sieben Bereiche der Anwendung
+js/views/*.js         Die Bereiche der Anwendung
 sw.js                 Service Worker (App-Shell offline, Diagramm-Cache)
 ```
 
@@ -198,6 +229,7 @@ Kein Build, keine Abhängigkeiten. Änderungen an den Dateien wirken nach einem 
 
 ## Datenformat
 
-Export einzelner Projekte: `{ "type": "umllight.project", "version": 1, "project": { … } }`
-Gesamt-Backup: `{ "type": "umllight.backup", "version": 1, "projects": [ … ] }`
-Beide Formate lassen sich über „Importieren" wieder einlesen.
+Export einzelner Projekte: `{ "type": "umllight.project", "version": 2, "project": { … } }`
+Gesamt-Backup: `{ "type": "umllight.backup", "version": 2, "projects": [ … ] }`
+Beide Formate lassen sich über „Importieren" wieder einlesen; Dateien mit
+`version: 1` (getrenntes View-Modell) werden dabei automatisch migriert.

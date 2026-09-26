@@ -22,7 +22,7 @@ export function renderSchemas(main, ctx) {
   main.appendChild(h('div', { class: 'page-head' },
     h('div', { class: 'grow' },
       h('h1', {}, 'API & Schemas'),
-      h('p', { class: 'hint' }, 'OpenAPI-Spezifikation und Avro-Records, erzeugt aus dem Datenmodell. Jede Fassung lässt sich überschreiben und exportieren.'))));
+      h('p', { class: 'hint' }, 'OpenAPI-Spezifikation und Avro-Records, erzeugt aus den Entitäten und API-Boundaries des Robustheitsmodells. Jede Fassung lässt sich überschreiben und exportieren.'))));
 
   const tabs = h('div', { class: 'tabs' },
     [['openapi', 'OpenAPI'], ['avro', 'Avro']].map(([key, label]) => h('button', {
@@ -34,7 +34,7 @@ export function renderSchemas(main, ctx) {
   if (!entities.length) {
     main.appendChild(h('div', { class: 'empty' },
       h('p', {}, 'Für Schemas werden Entitäten benötigt.'),
-      h('a', { class: 'btn', href: `#/p/${p.id}/datamodel` }, 'Zum Datenmodell')));
+      h('a', { class: 'btn', href: `#/p/${p.id}/robustness` }, 'Zum Robustheitsmodell')));
     return;
   }
 

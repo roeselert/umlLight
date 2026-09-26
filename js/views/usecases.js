@@ -59,6 +59,7 @@ export function renderUseCases(main, ctx) {
             patchAndDraw((prj) => {
               prj.useCases.actors = prj.useCases.actors.filter((x) => x.id !== a.id);
               for (const c of prj.useCases.useCases) c.actorIds = (c.actorIds || []).filter((id) => id !== a.id);
+              prj.robustness.links = prj.robustness.links.filter((l) => l.from !== a.id && l.to !== a.id);
             });
             renderAll();
           },

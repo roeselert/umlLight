@@ -7,18 +7,16 @@ import { renderOverview } from './views/overview.js';
 import { renderVision } from './views/vision.js';
 import { renderUseCases } from './views/usecases.js';
 import { renderDeployment } from './views/deployment.js';
-import { renderDataModel } from './views/datamodel.js';
-import { renderViewModel } from './views/viewmodel.js';
+import { renderRobustness } from './views/robustness.js';
 import { renderSchemas } from './views/schemas.js';
 
 const SECTIONS = [
   ['overview', 'Übersicht', '◎', 'Übersicht'],
   ['vision', 'Produktvision', '★', 'Vision'],
   ['usecases', 'Use Cases', '⬡', 'Use Cases'],
-  ['deployment', 'Deployment', '▤', 'Deploy'],
-  ['datamodel', 'Datenmodell', '▦', 'Daten'],
-  ['viewmodel', 'Views & Abläufe', '▣', 'Views'],
+  ['robustness', 'Robustheitsmodell', '◇', 'BCE'],
   ['schemas', 'API & Schemas', '❖', 'API'],
+  ['deployment', 'Deployment', '▤', 'Deploy'],
 ];
 
 const RENDERERS = {
@@ -26,8 +24,7 @@ const RENDERERS = {
   vision: renderVision,
   usecases: renderUseCases,
   deployment: renderDeployment,
-  datamodel: renderDataModel,
-  viewmodel: renderViewModel,
+  robustness: renderRobustness,
   schemas: renderSchemas,
 };
 
@@ -50,6 +47,9 @@ function parseHash() {
   const raw = (location.hash || '').replace(/^#\/?/, '');
   const parts = raw.split('/').filter(Boolean);
   if (parts[0] === 'p' && parts[1]) {
+    // data and view model were merged into the robustness model
+    const legacy = { datamodel: 'entities', viewmodel: 'boundaries' }[parts[2]];
+    if (legacy) return { route: 'project', projectId: parts[1], section: 'robustness', tab: legacy };
     return { route: 'project', projectId: parts[1], section: RENDERERS[parts[2]] ? parts[2] : 'overview' };
   }
   return { route: 'projects' };
@@ -153,6 +153,7 @@ function render() {
   document.title = `${project.name} — umlLight`;
   ctx.project = project;
   ctx.section = state.section;
+  if (state.tab) ctx.robustTab = state.tab;
   RENDERERS[state.section](main, ctx);
   main.scrollTop = 0;
 }

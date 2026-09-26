@@ -17,7 +17,7 @@ function counts(p) {
     `${(p.useCases.useCases || []).length} UC`,
     `${(p.dataModel.entities || []).length} Entitäten`,
     `${(p.deployment.nodes || []).length} Knoten`,
-    `${(p.viewModel.views || []).length} Views`,
+    `${(p.robustness.boundaries || []).length} Boundaries`,
   ].join(' · ');
 }
 

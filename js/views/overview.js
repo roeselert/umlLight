@@ -3,7 +3,7 @@
 import { h, clear, download, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
-import { useCaseUml, deploymentUml, dataModelUml, viewModelUml, ACTIVITY_TEMPLATE } from '../generators.js';
+import { useCaseUml, deploymentUml, dataModelUml, robustnessUml, ACTIVITY_TEMPLATE } from '../generators.js';
 import { openExportDialog } from '../export.js';
 import * as gh from '../github.js';
 import * as sync from '../gitsync.js';
@@ -63,6 +63,8 @@ export function renderOverview(main, ctx) {
   if (gh.isConfigured(sync.targetFor(p))) main.appendChild(gitCard(p, ctx));
 
   const ucCount = (p.useCases.useCases || []).length;
+  const rb = p.robustness;
+  const entities = p.dataModel.entities || [];
   const vision = p.vision || {};
   main.appendChild(h('div', { class: 'card' },
     h('h2', {}, 'Stand der Spezifikation'),
@@ -71,22 +73,21 @@ export function renderOverview(main, ctx) {
         `${(vision.goals || []).filter(Boolean).length} Ziele · ${(vision.nonGoals || []).filter(Boolean).length} Nicht-Ziele`, `${base}/vision`),
       statusRow('Use-Case-Modell', ucCount > 0,
         `${(p.useCases.actors || []).length} Akteure · ${ucCount} Use Cases`, `${base}/usecases`),
+      statusRow('Robustheitsmodell', rb.boundaries.length + rb.controls.length + entities.length > 0,
+        `${rb.components.length} Komponenten · ${rb.boundaries.length} Boundaries · ${rb.controls.length} Controls · ${entities.length} Entitäten · ${rb.links.length} Interaktionen`,
+        `${base}/robustness`),
+      statusRow('API & Schemas', entities.length > 0,
+        schemaDetail(p), `${base}/schemas`),
       statusRow('Deployment', p.deployment.mode === 'text' ? !!p.deployment.text.trim() : (p.deployment.nodes || []).length > 0,
         p.deployment.mode === 'text' ? 'Textbeschreibung' : `${(p.deployment.nodes || []).length} Knoten · ${(p.deployment.links || []).length} Verbindungen`,
-        `${base}/deployment`),
-      statusRow('Datenmodell', (p.dataModel.entities || []).length > 0,
-        `${(p.dataModel.entities || []).length} Entitäten · ${(p.dataModel.relations || []).length} Beziehungen`, `${base}/datamodel`),
-      statusRow('View-Modell', (p.viewModel.views || []).length > 0,
-        `${(p.viewModel.views || []).length} Views · ${(p.viewModel.activities || []).length} Abläufe`, `${base}/viewmodel`),
-      statusRow('API & Schemas', (p.dataModel.entities || []).length > 0,
-        schemaDetail(p), `${base}/schemas`)]))));
+        `${base}/deployment`)]))));
 
   const panels = [
     ['Use-Case-Diagramm', () => p.useCases.custom || useCaseUml(p.useCases, p.name), `${slug(p.name)}-usecases`],
-    ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
+    ['Robustheitsdiagramm', () => rb.custom || robustnessUml(p), `${slug(p.name)}-robustheit`],
     ['Datenmodell', () => p.dataModel.custom || dataModelUml(p.dataModel, p.name), `${slug(p.name)}-datamodel`],
-    ['Navigationsdiagramm', () => p.viewModel.custom || viewModelUml(p.viewModel, p.name), `${slug(p.name)}-viewmodel`],
-    ...(p.viewModel.activities || []).map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
+    ...rb.activities.map((a) => [`Ablauf: ${a.name}`, () => a.uml || ACTIVITY_TEMPLATE, `${slug(p.name)}-${slug(a.name)}`]),
+    ...(p.deployment.mode === 'text' ? [] : [['Deployment-Diagramm', () => p.deployment.custom || deploymentUml(p.deployment, p.name), `${slug(p.name)}-deployment`]]),
   ];
   for (const [title, generate, fileName] of panels) {
     main.appendChild(diagramPanel({ title, generate, fileName }));

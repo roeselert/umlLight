@@ -1,5 +1,5 @@
 /* umlLight service worker — offline app shell + cached diagram renders. */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL_CACHE = `umllight-shell-${VERSION}`;
 const DIAGRAM_CACHE = `umllight-diagrams-${VERSION}`;
 
@@ -20,6 +20,7 @@ const SHELL = [
   './js/gitsync.js',
   './js/gitpanel.js',
   './js/schemas.js',
+  './js/robustness.js',
   './js/views/schemas.js',
   './js/views/projects.js',
   './js/views/overview.js',
@@ -27,7 +28,7 @@ const SHELL = [
   './js/views/usecases.js',
   './js/views/deployment.js',
   './js/views/datamodel.js',
-  './js/views/viewmodel.js',
+  './js/views/robustness.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',

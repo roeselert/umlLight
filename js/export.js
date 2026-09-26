@@ -182,7 +182,7 @@ export async function buildMarkdown(p, options = {}) {
         push(`- ${from} ${r.type || '1-n'} ${to}${clean(r.label) ? ` — ${r.label}` : ''}`);
       }
       if (rels.length) push('');
-      push(...await diagramBlock('Datenmodell', p.dataModel.custom || dataModelUml(p.dataModel, p.name), opts));
+      push(...await diagramBlock('Datenmodell', p.dataModel.custom || dataModelUml(p.dataModel, p.name, p.robustness.components), opts));
     }
 
   }

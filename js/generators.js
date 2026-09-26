@@ -139,18 +139,18 @@ const REL_ARROWS = {
   '0-1': '|o--o|', '0-n': '|o--o{', inherit: '<|--', compose: '*--', aggregate: 'o--',
 };
 
-export function dataModelUml(dm, projectName = 'Datenmodell') {
+export function dataModelUml(dm, projectName = 'Datenmodell', components = []) {
   const entities = dm.entities || [];
-  const out = HEADER(['hide circle', 'skinparam linetype ortho']);
+  const out = HEADER(['hide circle', 'skinparam linetype ortho', 'skinparam packageStyle rectangle']);
   out.push(`title Datenmodell — ${esc(projectName)}`);
   if (!entities.length) {
     out.push('note as N', '  Noch keine Entitäten erfasst.', 'end note', '@enduml');
     return out.join('\n');
   }
-  for (const e of entities) {
+  const emit = (e, pad) => {
     const stereo = clean(e.stereotype) ? ` <<${esc(e.stereotype)}>>` : '';
     const attrs = (e.attributes || []).filter((a) => clean(a.name));
-    out.push(`entity "${esc(e.name) || 'Entität'}" as ${alias(e.id)}${stereo} {`);
+    const lines = [`entity "${esc(e.name) || 'Entität'}" as ${alias(e.id)}${stereo} {`];
     const keys = attrs.filter((a) => a.key === 'pk');
     const rest = attrs.filter((a) => a.key !== 'pk');
     const line = (a) => {
@@ -159,12 +159,22 @@ export function dataModelUml(dm, projectName = 'Datenmodell') {
       const mark = a.key === 'pk' ? ' <<PK>>' : (a.key === 'fk' ? ' <<FK>>' : '');
       return `  ${req}${esc(a.name)}${type}${mark}`;
     };
-    for (const a of keys) out.push(line(a));
-    if (keys.length && rest.length) out.push('  --');
-    for (const a of rest) out.push(line(a));
-    if (!attrs.length) out.push('  (keine Attribute)');
+    for (const a of keys) lines.push(line(a));
+    if (keys.length && rest.length) lines.push('  --');
+    for (const a of rest) lines.push(line(a));
+    if (!attrs.length) lines.push('  (keine Attribute)');
+    lines.push('}');
+    out.push(...lines.map((l) => pad + l));
+  };
+  // entities belong to business components, drawn as packages
+  for (const c of components) {
+    const members = entities.filter((e) => e.componentId === c.id);
+    if (!members.length) continue;
+    out.push(`package "${esc(c.name) || 'Komponente'}" as ${alias(c.id)} <<Business-Komponente>> {`);
+    for (const e of members) emit(e, '  ');
     out.push('}');
   }
+  for (const e of entities.filter((x) => !components.some((c) => c.id === x.componentId))) emit(e, '');
   for (const r of dm.relations || []) {
     if (!entities.some((e) => e.id === r.from) || !entities.some((e) => e.id === r.to)) continue;
     const arrow = REL_ARROWS[r.type] || '||--o{';

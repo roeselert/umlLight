@@ -29,7 +29,7 @@ Statt Datenmodell und Views getrennt zu pflegen, beschreibt ein Robustheitsmodel
 
 | Element | Inhalt |
 | --- | --- |
-| **Business-Komponente** | Fachlicher Baustein mit Verantwortung; bündelt Boundaries, Controls und Entitäten und wird im Diagramm als Paket gezeichnet |
+| **Business-Komponente** | Fachlicher Baustein mit Verantwortung; bündelt Boundaries, Controls und Entitäten (direkt in der Komponente zuordenbar) und wird im Robustheits- und im ER-Diagramm als Paket gezeichnet |
 | **Boundary** | Schnittstelle nach außen — *Oberfläche/Maske* (mit Elementen), *API* (mit Operationen) oder *Fremdsystem* |
 | **Control** | Fachlogik, frei als Text spezifiziert (Regeln, Abläufe, Fehlerfälle) |
 | **Entität** | Wie bisher: Attribute mit Typ, PK/FK, Pflicht sowie typisierte Beziehungen |

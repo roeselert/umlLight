@@ -14,9 +14,9 @@ const SECTIONS = [
   ['overview', 'Übersicht', '◎', 'Übersicht'],
   ['vision', 'Produktvision', '★', 'Vision'],
   ['usecases', 'Use Cases', '⬡', 'Use Cases'],
-  ['deployment', 'Deployment', '▤', 'Deploy'],
   ['robustness', 'Robustheitsmodell', '◇', 'BCE'],
   ['schemas', 'API & Schemas', '❖', 'API'],
+  ['deployment', 'Deployment', '▤', 'Deploy'],
 ];
 
 const RENDERERS = {

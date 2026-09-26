@@ -5,8 +5,9 @@
 import { h, modal, toast, copyText, download } from './ui.js';
 import { diagramUrl } from './plantuml.js';
 import {
-  useCaseUml, useCaseScenarioUml, deploymentUml, dataModelUml, viewModelUml, ACTIVITY_TEMPLATE,
+  useCaseUml, useCaseScenarioUml, deploymentUml, dataModelUml, robustnessUml, ACTIVITY_TEMPLATE,
 } from './generators.js';
+import { BOUNDARY_KINDS, participants } from './robustness.js';
 import { openApiText, avroText } from './schemas.js';
 
 const clean = (s) => String(s ?? '').trim();
@@ -16,7 +17,7 @@ const slug = (s) => String(s || 'projekt').replace(/[^\w.-]+/g, '_');
 const anchor = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s/g, '-');
 
 export const DEFAULT_OPTIONS = {
-  vision: true, usecases: true, deployment: true, datamodel: true, viewmodel: true, schemas: true,
+  vision: true, usecases: true, deployment: true, robustness: true, schemas: true,
   source: true, images: false, toc: true, scenarios: true,
 };
 
@@ -124,51 +125,86 @@ export async function buildMarkdown(p, options = {}) {
     }
   }
 
-  if (opts.datamodel) {
-    section(++n, 'Datenmodell');
-    for (const e of p.dataModel.entities || []) {
-      push(`### ${e.name}${clean(e.stereotype) ? ` «${e.stereotype}»` : ''}`, '');
-      if (clean(e.description)) push(e.description, '');
-      const attrs = (e.attributes || []).filter((a) => clean(a.name));
-      if (attrs.length) {
-        push('| Attribut | Typ | Schlüssel | Pflicht |', '| --- | --- | --- | --- |');
-        for (const a of attrs) push(`| ${a.name} | ${clean(a.type)} | ${(a.key || '').toUpperCase()} | ${a.required ? 'ja' : ''} |`);
+  if (opts.robustness) {
+    section(++n, 'Robustheitsmodell');
+    const rb = p.robustness;
+    const entities = p.dataModel.entities || [];
+    push(...await diagramBlock('Robustheitsdiagramm', rb.custom || robustnessUml(p), opts));
+
+    const kindLabel = Object.fromEntries(BOUNDARY_KINDS);
+    const emitGroup = (inGroup) => {
+      const boundaries = rb.boundaries.filter(inGroup);
+      const controls = rb.controls.filter(inGroup);
+      const ents = entities.filter(inGroup);
+      if (boundaries.length) {
+        push('**Boundaries**', '');
+        for (const b of boundaries) {
+          push(`- **${b.name}** *(${kindLabel[b.kind] || 'Boundary'})*${clean(b.description) ? ` — ${clean(b.description).replace(/\n/g, ' ')}` : ''}`);
+          if (b.kind === 'api') {
+            for (const op of (b.operations || []).filter((o) => clean(o.path))) {
+              push(`  - \`${clean(op.method).toUpperCase()} ${clean(op.path)}\`${clean(op.summary) ? ` — ${op.summary}` : ''}`);
+            }
+          } else if (b.kind === 'ui') {
+            for (const el of (b.elements || []).filter(clean)) push(`  - ${el}`);
+          }
+        }
         push('');
       }
+      if (controls.length) {
+        push('**Controls**', '');
+        for (const c of controls) {
+          push(`#### ${c.name}`, '');
+          push(clean(c.spec) || '_Noch nicht spezifiziert._', '');
+        }
+      }
+      if (ents.length) push('**Entitäten**', '');
+      for (const e of ents) {
+        push(`#### ${e.name}${clean(e.stereotype) ? ` «${e.stereotype}»` : ''}`, '');
+        if (clean(e.description)) push(e.description, '');
+        const attrs = (e.attributes || []).filter((a) => clean(a.name));
+        if (attrs.length) {
+          push('| Attribut | Typ | Schlüssel | Pflicht |', '| --- | --- | --- | --- |');
+          for (const a of attrs) push(`| ${a.name} | ${clean(a.type)} | ${(a.key || '').toUpperCase()} | ${a.required ? 'ja' : ''} |`);
+          push('');
+        }
+      }
+      return boundaries.length + controls.length + ents.length;
+    };
+
+    const ids = new Set(rb.components.map((c) => c.id));
+    for (const c of rb.components) {
+      push(`### Komponente: ${c.name}`, '');
+      if (clean(c.description)) push(c.description, '');
+      if (!emitGroup((x) => x.componentId === c.id)) push('_Noch keine Elemente._', '');
     }
+    // unassigned elements, including ones whose component was removed
+    const orphan = (x) => !ids.has(x.componentId || '');
+    if ([...rb.boundaries, ...rb.controls, ...entities].some(orphan)) {
+      if (rb.components.length) push('### Ohne Komponente', '');
+      emitGroup(orphan);
+    }
+
+    const all = participants(p);
+    const nameOf = (id) => all.find((x) => x.id === id)?.name || '?';
+    if (rb.links.length) {
+      push('### Interaktionen', '');
+      for (const l of rb.links) push(`- ${nameOf(l.from)} → ${nameOf(l.to)}${clean(l.label) ? `: ${l.label}` : ''}`);
+      push('');
+    }
+
     const rels = p.dataModel.relations || [];
-    if (rels.length) {
-      push('**Beziehungen**', '');
+    if (entities.length) {
+      push('### Datenmodell', '');
       for (const r of rels) {
-        const from = (p.dataModel.entities || []).find((x) => x.id === r.from)?.name || '?';
-        const to = (p.dataModel.entities || []).find((x) => x.id === r.to)?.name || '?';
+        const from = entities.find((x) => x.id === r.from)?.name || '?';
+        const to = entities.find((x) => x.id === r.to)?.name || '?';
         push(`- ${from} ${r.type || '1-n'} ${to}${clean(r.label) ? ` — ${r.label}` : ''}`);
       }
-      push('');
+      if (rels.length) push('');
+      push(...await diagramBlock('Datenmodell', p.dataModel.custom || dataModelUml(p.dataModel, p.name), opts));
     }
-    push(...await diagramBlock('Datenmodell', p.dataModel.custom || dataModelUml(p.dataModel, p.name), opts));
-  }
 
-  if (opts.viewmodel) {
-    section(++n, 'View-Modell & Abläufe');
-    for (const v of p.viewModel.views || []) {
-      push(`### ${v.name}${v.start ? ' *(Einstieg)*' : ''}`, '');
-      if (clean(v.description)) push(v.description, '');
-      const els = (v.elements || []).filter(clean);
-      if (els.length) { els.forEach((e) => push(`- ${e}`)); push(''); }
-    }
-    const links = p.viewModel.links || [];
-    if (links.length) {
-      push('**Navigation**', '');
-      for (const l of links) {
-        const from = (p.viewModel.views || []).find((x) => x.id === l.from)?.name || '?';
-        const to = (p.viewModel.views || []).find((x) => x.id === l.to)?.name || '?';
-        push(`- ${from} → ${to}${clean(l.label) ? `: ${l.label}` : ''}`);
-      }
-      push('');
-    }
-    push(...await diagramBlock('Navigationsdiagramm', p.viewModel.custom || viewModelUml(p.viewModel, p.name), opts));
-    for (const act of p.viewModel.activities || []) {
+    for (const act of rb.activities) {
       push(`### Ablauf: ${act.name}`, '');
       if (clean(act.description)) push(act.description, '');
       push(...await diagramBlock(act.name || 'Ablauf', act.uml || ACTIVITY_TEMPLATE, opts));
@@ -243,8 +279,7 @@ export function openExportDialog(projectOrList) {
       toggle('vision', 'Produktvision'),
       toggle('usecases', 'Use-Case-Modell'),
       toggle('deployment', 'Deployment'),
-      toggle('datamodel', 'Datenmodell'),
-      toggle('viewmodel', 'View-Modell & Abläufe'),
+      toggle('robustness', 'Robustheitsmodell (Komponenten, B/C/E, Abläufe)'),
       toggle('schemas', 'API & Schemas'),
       h('h3', { style: { marginTop: '14px' } }, 'Optionen'),
       toggle('toc', 'Inhaltsverzeichnis'),

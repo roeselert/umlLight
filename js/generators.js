@@ -1,6 +1,8 @@
 // Model -> PlantUML source generators. Every diagram can be overridden by a
 // hand-written source stored in `section.custom`.
 
+import { participants } from './robustness.js';
+
 const esc = (s) => String(s ?? '').replace(/"/g, "'").replace(/\r?\n/g, '\\n').trim();
 const alias = (id) => String(id || '').replace(/[^A-Za-z0-9_]/g, '_') || 'x';
 const clean = (s) => String(s ?? '').trim();
@@ -173,26 +175,76 @@ export function dataModelUml(dm, projectName = 'Datenmodell') {
   return out.join('\n');
 }
 
-// --------------------------------------------------------------- view model
-export function viewModelUml(vm, projectName = 'View-Modell') {
-  const views = vm.views || [];
-  const out = HEADER(['skinparam state { BackgroundColor<<start>> #E8F1FF }']);
-  out.push(`title View-Modell — ${esc(projectName)}`);
-  if (!views.length) {
-    out.push('note as N', '  Noch keine Views erfasst.', 'end note', '@enduml');
+// ------------------------------------------------------- robustness (BCE)
+const BCE_KEYWORDS = { actor: 'actor', boundary: 'boundary', control: 'control', entity: 'entity' };
+
+/**
+ * Robustness diagram: actors, boundaries, controls and entities grouped by
+ * business component. With `componentId` only that component is shown, plus
+ * whatever it interacts with (drawn in its own component, for context).
+ */
+export function robustnessUml(project, { componentId = '' } = {}) {
+  const rb = project.robustness || {};
+  const components = rb.components || [];
+  const all = participants(project);
+  const byId = new Map(all.map((x) => [x.id, x]));
+  const links = (rb.links || []).filter((l) => byId.has(l.from) && byId.has(l.to) && l.from !== l.to);
+
+  let shown = all.filter((x) => x.kind !== 'actor');
+  const focus = componentId ? components.find((c) => c.id === componentId) : null;
+  if (focus) {
+    const own = new Set(shown.filter((x) => x.componentId === focus.id).map((x) => x.id));
+    const near = new Set(own);
+    for (const l of links) {
+      if (own.has(l.from)) near.add(l.to);
+      if (own.has(l.to)) near.add(l.from);
+    }
+    shown = all.filter((x) => near.has(x.id));
+  } else {
+    // actors only appear when they interact with something
+    const linked = new Set(links.flatMap((l) => [l.from, l.to]));
+    shown = [...all.filter((x) => x.kind === 'actor' && linked.has(x.id)), ...shown];
+  }
+  const visible = new Set(shown.map((x) => x.id));
+
+  const out = HEADER(['left to right direction', 'skinparam packageStyle rectangle']);
+  // A hidden control keeps PlantUML on the description diagram even when only
+  // entities are present (it would otherwise pick a class or sequence diagram).
+  out.push('control "anchor" as _bce_anchor', 'remove _bce_anchor');
+  out.push(`title Robustheitsdiagramm — ${esc(focus ? focus.name : project.name)}`);
+  if (!shown.length) {
+    out.push('note as N', focus ? '  Diese Komponente enthält noch keine Elemente.' : '  Noch keine Boundaries, Controls oder Entitäten erfasst.', 'end note', '@enduml');
     return out.join('\n');
   }
-  for (const v of views) {
-    out.push(`state "${esc(v.name) || 'View'}" as ${alias(v.id)}${v.start ? ' <<start>>' : ''}`);
-    const els = (v.elements || []).filter((e) => clean(e));
-    if (els.length) out.push(`${alias(v.id)} : ${els.map(esc).join('\\n')}`);
+
+  const label = (x) => {
+    let name = esc(x.name);
+    if (x.kind === 'boundary' && x.ref?.kind === 'api') {
+      const ops = (x.ref.operations || []).filter((o) => clean(o.path)).map((o) => `${clean(o.method).toUpperCase()} ${esc(o.path)}`);
+      if (ops.length) name += `\\n${ops.slice(0, 4).join('\\n')}${ops.length > 4 ? '\\n…' : ''}`;
+    }
+    return name;
+  };
+  const stereo = (x) => {
+    if (x.kind !== 'boundary') return '';
+    return { api: ' <<API>>', external: ' <<Fremdsystem>>' }[x.ref?.kind] || '';
+  };
+  const emit = (x, pad) => out.push(`${pad}${BCE_KEYWORDS[x.kind]} "${label(x)}" as ${alias(x.id)}${stereo(x)}`);
+
+  for (const x of shown.filter((y) => y.kind === 'actor')) emit(x, '');
+  for (const c of components) {
+    const members = shown.filter((x) => x.kind !== 'actor' && x.componentId === c.id);
+    if (!members.length) continue;
+    out.push(`package "${esc(c.name) || 'Komponente'}" as ${alias(c.id)} <<Business-Komponente>> {`);
+    for (const x of members) emit(x, '  ');
+    out.push('}');
   }
-  const starts = views.filter((v) => v.start);
-  for (const s of (starts.length ? starts : views.slice(0, 1))) out.push(`[*] --> ${alias(s.id)}`);
-  for (const l of vm.links || []) {
-    if (!views.some((v) => v.id === l.from) || !views.some((v) => v.id === l.to)) continue;
-    const label = clean(l.label) ? ` : ${esc(l.label)}` : '';
-    out.push(`${alias(l.from)} --> ${alias(l.to)}${label}`);
+  for (const x of shown.filter((y) => y.kind !== 'actor' && !components.some((c) => c.id === y.componentId))) emit(x, '');
+
+  for (const l of links) {
+    if (!visible.has(l.from) || !visible.has(l.to)) continue;
+    const text = clean(l.label) ? ` : ${esc(l.label)}` : '';
+    out.push(`${alias(l.from)} --> ${alias(l.to)}${text}`);
   }
   out.push('@enduml');
   return out.join('\n');

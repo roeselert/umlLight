@@ -4,7 +4,7 @@ const KEY = 'umllight.db.v1';
 const SETTINGS_KEY = 'umllight.settings.v1';
 const GIT_TOKEN_KEY = 'umllight.gittoken.v1';
 const GIT_STATE_KEY = 'umllight.gitstate.v1';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const DEFAULT_SERVER = 'https://www.plantuml.com/plantuml';
 export const DEFAULT_GIT_API = 'https://api.github.com';
@@ -50,8 +50,12 @@ export function emptyProject(name = 'Neues Projekt') {
     vision: { goals: [], nonGoals: [], constraints: '' },
     useCases: { actors: [], useCases: [], systemName: '', custom: null },
     deployment: { mode: 'model', text: '', nodes: [], links: [], custom: null },
+    // entities (with attributes and relations) are the "E" of the
+    // robustness model; they carry an optional componentId
     dataModel: { entities: [], relations: [], custom: null },
-    viewModel: { views: [], links: [], activities: [], custom: null },
+    robustness: {
+      components: [], boundaries: [], controls: [], links: [], activities: [], custom: null,
+    },
     schemas: {
       openapi: {
         custom: null, title: '', version: '1.0.0', server: '',
@@ -71,7 +75,7 @@ function normalizeProject(p) {
     useCases: { ...base.useCases, ...(p.useCases || {}) },
     deployment: { ...base.deployment, ...(p.deployment || {}) },
     dataModel: { ...base.dataModel, ...(p.dataModel || {}) },
-    viewModel: { ...base.viewModel, ...(p.viewModel || {}) },
+    robustness: { ...base.robustness, ...(p.robustness || {}) },
     schemas: {
       openapi: { ...base.schemas.openapi, ...((p.schemas || {}).openapi || {}) },
       avro: { ...base.schemas.avro, ...((p.schemas || {}).avro || {}) },
@@ -85,10 +89,35 @@ function normalizeProject(p) {
   merged.deployment.links ||= [];
   merged.dataModel.entities ||= [];
   merged.dataModel.relations ||= [];
-  merged.viewModel.views ||= [];
-  merged.viewModel.links ||= [];
-  merged.viewModel.activities ||= [];
+  for (const arr of ['components', 'boundaries', 'controls', 'links', 'activities']) {
+    if (!Array.isArray(merged.robustness[arr])) merged.robustness[arr] = [];
+  }
+  if (p.viewModel && !p.robustness) migrateViewModel(merged.robustness, p.viewModel);
+  delete merged.viewModel;
   return merged;
+}
+
+/**
+ * Schema v1 kept screens in a separate view model. In the robustness model
+ * they become UI boundaries; navigation turns into boundary links (flagged in
+ * the editor, since robustness rules route them through a control) and the
+ * activity diagrams move over unchanged.
+ */
+function migrateViewModel(rb, vm) {
+  for (const v of vm.views || []) {
+    rb.boundaries.push({
+      id: v.id || uid('bnd'), name: v.name || 'View', kind: 'ui', componentId: '',
+      description: [v.description, v.start ? 'Einstiegspunkt der Anwendung.' : ''].filter(Boolean).join('\n'),
+      elements: Array.isArray(v.elements) ? v.elements : [], operations: [],
+    });
+  }
+  for (const l of vm.links || []) rb.links.push({ from: l.from, to: l.to, label: l.label || '' });
+  for (const a of vm.activities || []) rb.activities.push(a);
+  if (vm.custom) {
+    rb.activities.push({
+      id: uid('act'), name: 'Navigation (aus View-Modell übernommen)', description: '', uml: vm.custom,
+    });
+  }
 }
 
 export function load() {

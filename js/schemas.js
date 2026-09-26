@@ -259,6 +259,39 @@ export function openApiSpec(project, opts = {}) {
     }
   }
 
+  // Operations declared on API boundaries of the robustness model. Ones the
+  // CRUD generation already covers stay linked as they are; the rest become
+  // stubs tagged with their business component.
+  if (opts.boundaryOps !== false) {
+    const rb = project.robustness || {};
+    for (const b of (rb.boundaries || []).filter((x) => x.kind === 'api')) {
+      const comp = (rb.components || []).find((c) => c.id === b.componentId);
+      const tag = clean(comp?.name) || clean(b.name) || 'API';
+      for (const op of b.operations || []) {
+        const method = clean(op.method).toLowerCase();
+        const path = clean(op.path);
+        if (!method || !path.startsWith('/')) continue;
+        paths[path] ||= {};
+        if (paths[path][method]) continue;
+        if (!tags.some((t) => t.name === tag)) {
+          tags.push({ name: tag, ...(clean(comp?.description) ? { description: clean(comp.description) } : {}) });
+        }
+        const params = [...path.matchAll(/\{([^}]+)\}/g)].map((m) => ({
+          name: m[1], in: 'path', required: true, schema: { type: 'string' },
+        }));
+        paths[path][method] = {
+          tags: [tag],
+          summary: clean(op.summary) || `${clean(b.name) || 'API'}: ${method.toUpperCase()} ${path}`,
+          operationId: camel(`${method} ${clean(op.summary) || path.replace(/[{}]/g, '')}`, method),
+          ...(params.length ? { parameters: params } : {}),
+          ...(['post', 'put', 'patch'].includes(method)
+            ? { requestBody: { content: { 'application/json': { schema: { type: 'object' } } } } } : {}),
+          responses: { 200: { description: 'Erfolg' }, 400: { description: 'Fehlerhafte Anfrage' } },
+        };
+      }
+    }
+  }
+
   schemas.Error = {
     type: 'object',
     properties: { code: { type: 'string' }, message: { type: 'string' } },

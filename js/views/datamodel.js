@@ -1,10 +1,13 @@
-// Data model: entities with attributes plus typed relations (ER-style class diagram).
+// Entities of the robustness model: attributes plus typed relations, drawn as
+// an ER-style class diagram. Rendered as the "Entitäten" tab of the
+// robustness page.
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
   confirmDialog, debounce, toast, syncTitle, moveActions, gridTable } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
 import { dataModelUml } from '../generators.js';
+import { componentName } from '../robustness.js';
 
 const TYPES = ['String', 'Text', 'Integer', 'Decimal', 'Boolean', 'Date', 'DateTime', 'UUID', 'Enum', 'JSON', 'Blob'];
 const KEYS = [['', '—'], ['pk', 'PK'], ['fk', 'FK']];
@@ -14,8 +17,12 @@ const REL_TYPES = [
   ['compose', 'Komposition'], ['aggregate', 'Aggregation'],
 ];
 
-export function renderDataModel(main, ctx) {
-  clear(main);
+/**
+ * @param {HTMLElement} main   container to append to
+ * @param {object} ctx
+ * @param {() => void} [onChange]  called after changes that affect other diagrams
+ */
+export function renderEntityEditor(main, ctx, onChange = () => {}) {
   const p = ctx.project;
   const dm = p.dataModel;
   const patch = (fn) => { store.update(p.id, fn); ctx.markSaved(); };
@@ -23,14 +30,11 @@ export function renderDataModel(main, ctx) {
   const save = (fn) => { store.updateSoon(p.id, fn); ctx.markSaved(); };
 
   let diagram;
-  const refresh = () => diagram && diagram.refresh();
+  const refresh = () => { if (diagram) diagram.refresh(); onChange(); };
   const patchAndDraw = (fn) => { patch(fn); refresh(); };
   const redrawSoon = debounce(() => refresh(), 700);
-
-  main.appendChild(h('div', { class: 'page-head' },
-    h('div', { class: 'grow' },
-      h('h1', {}, 'Datenmodell'),
-      h('p', { class: 'hint' }, 'Entitäten, Attribute und Beziehungen — als ER-Diagramm gerendert.'))));
+  const componentOpts = () => [['', '— keine —'],
+    ...(p.robustness.components || []).map((c) => [c.id, c.name || 'Komponente'])];
 
   diagram = diagramPanel({
     title: 'Datenmodell-Diagramm',
@@ -87,7 +91,7 @@ export function renderDataModel(main, ctx) {
     for (const e of dm.entities) {
       entWrap.appendChild(withId(listItem({
         title: e.name || 'Entität',
-        meta: `${(e.attributes || []).length} Attribute`,
+        meta: [componentName(p, e.componentId), `${(e.attributes || []).length} Attribute`].filter(Boolean).join(' · '),
         actions: [...moveActions(dm.entities, e.id, () => { patchAndDraw(() => {}); renderEntities(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
@@ -95,6 +99,7 @@ export function renderDataModel(main, ctx) {
             patchAndDraw((prj) => {
               prj.dataModel.entities = prj.dataModel.entities.filter((x) => x.id !== e.id);
               prj.dataModel.relations = prj.dataModel.relations.filter((r) => r.from !== e.id && r.to !== e.id);
+              prj.robustness.links = prj.robustness.links.filter((l) => l.from !== e.id && l.to !== e.id);
             });
             renderEntities();
             renderRelations();
@@ -105,6 +110,8 @@ export function renderDataModel(main, ctx) {
             field('Name', textInput(e.name, function (val) { e.name = val; syncTitle(this, val, 'Entität'); save(() => {}); redrawSoon(); })),
             field('Stereotyp', textInput(e.stereotype, (val) => { e.stereotype = val; save(() => {}); redrawSoon(); },
               { placeholder: 'z. B. Aggregate Root, Value Object' }))),
+          field('Business-Komponente', select(e.componentId || '', componentOpts(),
+            (val) => { e.componentId = val; patchAndDraw(() => {}); })),
           field('Beschreibung', textArea(e.description, (val) => { e.description = val; save(() => {}); }, { rows: 2 })),
           h('h3', {}, 'Attribute'),
           attributeTable(e)),
@@ -120,7 +127,7 @@ export function renderDataModel(main, ctx) {
         class: 'btn small primary',
         onclick: () => {
           patchAndDraw((prj) => prj.dataModel.entities.push({
-            id: store.uid('ent'), name: 'NeueEntität', stereotype: '', description: '',
+            id: store.uid('ent'), name: 'NeueEntität', stereotype: '', description: '', componentId: '',
             attributes: [{ name: 'id', type: 'UUID', key: 'pk', required: true }],
           }));
           renderEntities();

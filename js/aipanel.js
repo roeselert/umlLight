@@ -11,6 +11,7 @@ const QUICK_PROMPTS = {
     'Erzeuge ein vollständiges Use-Case-Diagramm aus dem Projektkontext.',
     'Ergänze fehlende Akteure und sinnvolle include-/extend-Beziehungen.',
     'Vereinfache das Diagramm auf die wichtigsten Use Cases.',
+    'Erzeuge ein Aktivitätsdiagramm für den Hauptablauf.',
   ],
   deployment: [
     'Erzeuge ein Deployment-Diagramm für eine typische Umsetzung dieses Projekts.',
@@ -26,7 +27,6 @@ const QUICK_PROMPTS = {
     'Erzeuge ein Robustheitsdiagramm (boundary, control, entity) aus den Use Cases.',
     'Prüfe die Robustheitsregeln und führe Verbindungen zwischen Boundaries und Entitäten über Controls.',
     'Gruppiere die Elemente nach Business-Komponenten als package.',
-    'Erzeuge ein Aktivitätsdiagramm für den Hauptablauf.',
   ],
   default: [
     'Erzeuge ein passendes Diagramm aus dem Projektkontext.',

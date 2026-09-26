@@ -1,10 +1,11 @@
-// Use-case model: actors, use cases, relations, scenario steps.
+// Use-case model: actors, use cases, relations, scenario steps and free-form
+// activity diagrams (Abläufe) that use cases link to.
 
 import { h, clear, field, textInput, textArea, select, listItem, makeSortable, withId,
   confirmDialog, debounce, toast, syncTitle, moveActions } from '../ui.js';
 import * as store from '../store.js';
 import { diagramPanel } from '../diagram.js';
-import { useCaseUml, useCaseScenarioUml } from '../generators.js';
+import { useCaseUml, useCaseScenarioUml, ACTIVITY_TEMPLATE } from '../generators.js';
 
 const PRIORITIES = [['normal', 'normal'], ['muss', 'muss'], ['soll', 'soll'], ['kann', 'kann']];
 
@@ -151,6 +152,46 @@ export function renderUseCases(main, ctx) {
       })));
   };
 
+  const newActivity = (name) => ({ id: store.uid('flw'), name, description: '', uml: ACTIVITY_TEMPLATE });
+
+  const activityChips = (c) => {
+    const wrap = h('div', { style: { marginBottom: '12px' } });
+    const rebuild = () => {
+      clear(wrap);
+      c.activityIds ||= [];
+      wrap.appendChild(h('span', { class: 'hint', style: { display: 'block', marginBottom: '4px' } }, 'Verknüpfte Abläufe'));
+      wrap.appendChild(h('div', { class: 'chips' },
+        uc.activities.map((a) => {
+          const on = c.activityIds.includes(a.id);
+          return h('button', {
+            class: `chip chip-toggle ${on ? 'on' : ''}`,
+            onclick: () => {
+              if (on) c.activityIds = c.activityIds.filter((id) => id !== a.id); else c.activityIds.push(a.id);
+              patch(() => {});
+              rebuild();
+              renderActivities();
+            },
+          }, a.name || 'Ablauf');
+        }),
+        h('button', {
+          class: 'chip chip-toggle',
+          title: 'Neuen Ablauf anlegen und mit diesem Use Case verknüpfen',
+          onclick: () => {
+            const a = newActivity(c.name || 'Neuer Ablauf');
+            patch((prj) => prj.useCases.activities.push(a));
+            c.activityIds.push(a.id);
+            patch(() => {});
+            openActivities.add(a.id);
+            rebuild();
+            renderActivities();
+            toast('Ablauf angelegt und verknüpft');
+          },
+        }, '+ neuer Ablauf')));
+    };
+    rebuild();
+    return wrap;
+  };
+
   function useCaseBody(c) {
     const scenario = diagramPanel({
       title: 'Ablauf (Aktivitätsdiagramm)',
@@ -197,6 +238,7 @@ export function renderUseCases(main, ctx) {
       h('div', { onInput: rerenderScenario }, stepsEditor(c)),
       relationChips(c, 'includes', 'enthält (include)'),
       relationChips(c, 'extends', 'erweitert (extend)'),
+      activityChips(c),
       scenario);
   }
 
@@ -208,7 +250,7 @@ export function renderUseCases(main, ctx) {
         .map((id) => uc.actors.find((a) => a.id === id)?.name).filter(Boolean).join(', ');
       ucWrap.appendChild(withId(listItem({
         title: c.name || 'Use Case',
-        meta: actorNames,
+        meta: [actorNames, (c.activityIds || []).length ? `${c.activityIds.length} ${c.activityIds.length === 1 ? 'Ablauf' : 'Abläufe'}` : ''].filter(Boolean).join(' · '),
         actions: [...moveActions(uc.useCases, c.id, () => { patchAndDraw(() => {}); renderUseCaseList(); }), h('button', {
           class: 'btn small danger',
           onclick: async () => {
@@ -236,7 +278,7 @@ export function renderUseCases(main, ctx) {
         onclick: () => {
           patchAndDraw((prj) => prj.useCases.useCases.push({
             id: store.uid('uc'), name: 'Neuer Use Case', description: '', actorIds: [],
-            priority: 'normal', precondition: '', result: '', trigger: '', steps: [], includes: [], extends: [],
+            priority: 'normal', precondition: '', result: '', trigger: '', steps: [], includes: [], extends: [], activityIds: [],
           }));
           renderUseCaseList();
           toast('Use Case angelegt');
@@ -247,6 +289,70 @@ export function renderUseCases(main, ctx) {
   makeSortable(ucWrap, (ids) => {
     patchAndDraw((prj) => prj.useCases.useCases.sort((x, y) => ids.indexOf(x.id) - ids.indexOf(y.id)));
   });
+
+  // --------------------------------------------------------- activities
+  const actWrap = h('div', {});
+  // activity items stay expanded when the list is rebuilt
+  const openActivities = new Set();
+  function renderActivities() {
+    clear(actWrap);
+    if (!uc.activities.length) actWrap.appendChild(h('div', { class: 'empty' }, 'Noch keine Abläufe.'));
+    for (const act of uc.activities) {
+      const users = uc.useCases.filter((c) => (c.activityIds || []).includes(act.id));
+      actWrap.appendChild(withId(listItem({
+        title: act.name || 'Ablauf',
+        meta: users.length ? users.map((c) => c.name || 'Use Case').join(', ') : 'nicht verknüpft',
+        open: openActivities.has(act.id),
+        onToggle: (show) => { if (show) openActivities.add(act.id); else openActivities.delete(act.id); },
+        actions: [...moveActions(uc.activities, act.id, () => { patch(() => {}); renderActivities(); }), h('button', {
+          class: 'btn small danger',
+          onclick: async () => {
+            if (!(await confirmDialog('Ablauf löschen?', `„${act.name}" wird entfernt und bei allen Use Cases entknüpft.`))) return;
+            patch((prj) => {
+              prj.useCases.activities = prj.useCases.activities.filter((x) => x.id !== act.id);
+              for (const c of prj.useCases.useCases) c.activityIds = (c.activityIds || []).filter((id) => id !== act.id);
+            });
+            renderActivities();
+            renderUseCaseList();
+          },
+        }, 'Löschen')],
+        body: () => h('div', {},
+          field('Name', textInput(act.name, function (val) { act.name = val; syncTitle(this, val, 'Ablauf'); save(() => {}); })),
+          field('Beschreibung', textArea(act.description, (val) => { act.description = val; save(() => {}); }, { rows: 2 })),
+          h('p', { class: 'hint' }, users.length
+            ? `Verknüpft mit: ${users.map((c) => c.name || 'Use Case').join(', ')}. Verknüpfungen werden im jeweiligen Use Case gepflegt.`
+            : 'Noch mit keinem Use Case verknüpft — im Use Case unter „Verknüpfte Abläufe" auswählen.'),
+          diagramPanel({
+            title: act.name || 'Ablauf',
+            project: p,
+            section: 'usecases',
+            fileName: `${p.name}-${act.name || 'ablauf'}`,
+            generate: () => act.uml || ACTIVITY_TEMPLATE,
+            getCustom: () => act.uml ?? null,
+            setCustom: (val) => patch(() => { act.uml = val === null ? ACTIVITY_TEMPLATE : val; }),
+          })),
+      }), act.id));
+    }
+  }
+
+  main.appendChild(h('div', { class: 'card' },
+    h('div', { class: 'card-head' },
+      h('h2', {}, 'Abläufe'),
+      h('button', {
+        class: 'btn small primary',
+        onclick: () => {
+          const a = newActivity('Neuer Ablauf');
+          openActivities.add(a.id);
+          patch((prj) => prj.useCases.activities.push(a));
+          renderActivities();
+          toast('Ablauf mit Vorlage angelegt');
+        },
+      }, '+ Ablauf')),
+    h('p', { class: 'hint' }, 'Frei gestaltbare Aktivitätsdiagramme — über „Quelle" direkt in PlantUML bearbeitbar. Ein Ablauf kann mit mehreren Use Cases verknüpft werden.'),
+    actWrap));
+  renderActivities();
+  makeSortable(actWrap, (ids) => patch((prj) =>
+    prj.useCases.activities.sort((x, y) => ids.indexOf(x.id) - ids.indexOf(y.id))));
 
   function renderAll() {
     renderActors();

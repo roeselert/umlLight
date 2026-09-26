@@ -65,6 +65,7 @@ export async function buildMarkdown(p, options = {}) {
   if (opts.usecases) {
     section(++n, 'Use-Case-Modell');
     const actors = p.useCases.actors || [];
+    const flowsAll = p.useCases.activities || [];
     if (actors.length) {
       push('**Akteure**', '');
       for (const a of actors) push(`- **${a.name}**${a.type === 'system' ? ' *(Fremdsystem)*' : ''}${clean(a.description) ? ` — ${a.description}` : ''}`);
@@ -80,6 +81,8 @@ export async function buildMarkdown(p, options = {}) {
       if (clean(c.trigger)) meta.push(`**Auslöser:** ${c.trigger}`);
       if (clean(c.precondition)) meta.push(`**Vorbedingung:** ${c.precondition}`);
       if (clean(c.result)) meta.push(`**Ergebnis:** ${c.result}`);
+      const flows = (c.activityIds || []).map((id) => flowsAll.find((a) => a.id === id)).filter(Boolean);
+      if (flows.length) meta.push(`**Abläufe:** ${flows.map((a) => `[${a.name}](#${anchor(`Ablauf: ${a.name}`)})`).join(', ')}`);
       if (meta.length) push(meta.join('  \n'), '');
       if (clean(c.description)) push(c.description, '');
       const steps = (c.steps || []).filter((s) => clean(s.text));
@@ -93,6 +96,13 @@ export async function buildMarkdown(p, options = {}) {
       if (opts.scenarios && (steps.length || c.customUml)) {
         push(...await diagramBlock(`Ablauf ${c.name}`, c.customUml || useCaseScenarioUml(c, actors), opts));
       }
+    }
+    for (const act of flowsAll) {
+      push(`### Ablauf: ${act.name}`, '');
+      const users = (p.useCases.useCases || []).filter((c) => (c.activityIds || []).includes(act.id));
+      if (users.length) push(`*Verknüpft mit: ${users.map((c) => c.name).join(', ')}*`, '');
+      if (clean(act.description)) push(act.description, '');
+      push(...await diagramBlock(act.name || 'Ablauf', act.uml || ACTIVITY_TEMPLATE, opts));
     }
   }
 
@@ -175,11 +185,6 @@ export async function buildMarkdown(p, options = {}) {
       push(...await diagramBlock('Datenmodell', p.dataModel.custom || dataModelUml(p.dataModel, p.name), opts));
     }
 
-    for (const act of rb.activities) {
-      push(`### Ablauf: ${act.name}`, '');
-      if (clean(act.description)) push(act.description, '');
-      push(...await diagramBlock(act.name || 'Ablauf', act.uml || ACTIVITY_TEMPLATE, opts));
-    }
   }
 
   if (opts.schemas && (p.dataModel.entities || []).length) {
@@ -277,8 +282,8 @@ export function openExportDialog(projectOrList) {
         : `Spezifikation für „${projects[0].name}".`),
       h('h3', {}, 'Abschnitte'),
       toggle('vision', 'Produktvision'),
-      toggle('usecases', 'Use-Case-Modell'),
-      toggle('robustness', 'Robustheitsmodell (Komponenten, B/C/E, Abläufe)'),
+      toggle('usecases', 'Use-Case-Modell (inkl. Abläufe)'),
+      toggle('robustness', 'Robustheitsmodell (Komponenten, B/C/E)'),
       toggle('schemas', 'API & Schemas'),
       toggle('deployment', 'Deployment'),
       h('h3', { style: { marginTop: '14px' } }, 'Optionen'),
